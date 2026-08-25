@@ -1,0 +1,27 @@
+{
+  "name": "Imperio de Negocios",
+  "short_name": "Imperio de Negocios",
+  "description": "Simulador de inversiones Imperio de Negocios",
+  "lang": "es",
+  "id": "../index.html",
+  "start_url": "../index.html",
+  "scope": "../",
+  "prefer_related_applications": false,
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#06131f",
+  "icons": [
+    {
+      "src": "../assets/logos/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "../assets/logos/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

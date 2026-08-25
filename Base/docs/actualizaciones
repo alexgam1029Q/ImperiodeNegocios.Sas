@@ -1,0 +1,33 @@
+# Actualizaciones recientes
+
+## 24 de agosto de 2026
+
+- Se eliminó el QR duplicado no utilizado.
+- Se ordenaron las divisas con USD primero y COP segundo.
+- Se añadió inicio de sesión con Google y selección de nombre de usuario.
+- Se corrigió el cierre de sesión para volver al login y se reforzaron las capas de modales.
+- Se mejoró la interfaz móvil de cabecera, navegación, formularios, tablas y modales.
+- Se añadieron preconexiones a CDN y Supabase y una versión nueva de caché.
+- Se añadió una tabla de ranking por ganancias acumuladas, cargada al abrir su sección.
+- El ranking ahora suma ganancias de operaciones y dividendos acumulados.
+- Cada cuenta nueva recibe un ID público secuencial desde 1, copiable y utilizable en búsquedas.
+- Las propuestas cooperativas se guardan también en el perfil del amigo invitado.
+- El registro normal usa usuario y contraseña guardados en `users`; Google mantiene su acceso mediante OAuth.
+- Se añadió la migración SQL de perfiles, amistades, billeteras y transacciones con RLS.
+- Las actualizaciones del día se muestran separadas por fecha dentro de “Acerca de”.
+
+## Cambios generales
+
+- Se mejoró la experiencia de inicio y navegación.
+- Se ajustó la carga de datos del simulador para mayor estabilidad.
+- Se organizó la documentación del proyecto.
+- Se mantienen las funciones de cuenta y guardado de progreso.
+- Se agregó un modal de eliminación de cuenta con confirmación de texto.
+- El botón de eliminación solo se habilita al escribir correctamente `CONFIRM ACCOUNT DELETION`.
+
+## 22 de agosto de 2026
+
+- Se estilizó el botón de confirmación: rojo cuando está activo y gris cuando está deshabilitado.
+- Se incorporaron 15 mascotas con iconos PNG transparentes.
+- Se actualizó la cuadrícula de personalización para mostrar los iconos ilustrados.
+- Se simplificó el perfil para mostrar la mascota, el nombre, el nivel y la descripción.

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crear cuenta | Imperio de Negocios</title>
+<link rel="icon" type="image/png" href="assets/logos/app-icon-192.png">
+<link rel="stylesheet" href="css/styles.css?v=25">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    window.SUPABASE_URL = 'https://chcuojprqzpiyknnkhwn.supabase.co';
+    window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNoY3VvanBycXpwaXlrbm5raHduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MTcxNjIsImV4cCI6MjEwMTE5MzE2Mn0.0vqJEIe-ZtMuYSsr_7vbMk8NyawVGqBx7scVpgEuYW0';
+</script>
+<script defer src="js/services/db.js?v=64"></script>
+</head>
+<body>
+<div class="login-screen" id="registerPage">
+    <img src="assets/logos/logo.png" class="logo-img" alt="Logo">
+    <div class="login-box">
+        <h1 style="color: var(--primary); font-size: 22px; letter-spacing: 2px; margin: 0 0 25px; text-align: center; text-shadow: 0 0 10px var(--primary);">CREAR CUENTA</h1>
+        <form id="registerForm">
+            <input type="text" id="registerUsername" placeholder="Usuario" autocomplete="username" maxlength="20" required>
+            <input type="password" id="registerPassword" placeholder="Contraseña" autocomplete="new-password" minlength="8" required>
+            <button type="submit">Registrarse</button>
+        </form>
+        <div id="registerMessage" style="min-height:20px; color:#ff8888; text-align:center; font-size:0.85em;"></div>
+        <div class="login-divider" aria-hidden="true"><span>o</span></div>
+        <button id="googleRegisterButton" class="google-login-button" type="button">
+            <svg class="google-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path fill="#4285F4" d="M21.35 12.27c0-.71-.06-1.4-.18-2.05H12v3.88h5.23a4.47 4.47 0 0 1-1.94 2.93v2.43h3.14c1.84-1.69 2.92-4.18 2.92-7.19z"/>
+                <path fill="#34A853" d="M12 21.75c2.63 0 4.84-.87 6.45-2.35l-3.14-2.43c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.51A9.74 9.74 0 0 0 12 21.75z"/>
+                <path fill="#FBBC05" d="M6.54 13.86a5.86 5.86 0 0 1 0-3.72V7.63H3.3a9.76 9.76 0 0 0 0 8.74l3.24-2.51z"/>
+                <path fill="#EA4335" d="M12 6.11c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.2 14.63 2.25 12 2.25a9.74 9.74 0 0 0-8.7 5.38l3.24 2.51C7.31 7.83 9.46 6.11 12 6.11z"/>
+            </svg>
+            <span>Continuar con Google</span>
+        </button>
+        <a href="login.html" style="display:block; margin-top:18px; color:var(--primary); text-align:center;">Ya tengo una cuenta</a>
+    </div>
+</div>
+<script>
+    document.getElementById('googleRegisterButton').addEventListener('click', async () => {
+        try { await db.signInWithGoogle(); } catch (error) { document.getElementById('registerMessage').textContent = error.message || 'No se pudo continuar con Google.'; }
+    });
+    document.getElementById('registerForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = event.currentTarget.querySelector('button');
+        const message = document.getElementById('registerMessage');
+        const username = document.getElementById('registerUsername').value.trim().toLowerCase();
+        const password = document.getElementById('registerPassword').value;
+        if (!/^[a-z0-9_]{3,20}$/.test(username)) { message.textContent = 'Usa entre 3 y 20 caracteres válidos.'; return; }
+        button.disabled = true;
+        message.textContent = 'Creando cuenta...';
+        try {
+            await db.createUser(username, password, {
+                username, capital: 10000, xp: 0, nivel: 1, deuda: 0, portafolio: {}, g: 0, p: 0, ti: 0, div: 0,
+                logros: [], flags: {}, historial: [], asesores: {}, predicciones: [], predHistorial: [], habilidades: {}, reputacion: 50,
+                eventosRep: [], misionesRep: [], tarjetaGlobal: {}, historialGlobal: [], historialBancario: [], puntosHabilidadTotal: 0,
+                desafios: [], desafiosCompletados: 0, ultimaActDesafios: null, fotoPerfil: 'assets/perfiles/perfil-01.png?v=1', avatarSeleccionado: 0,
+                preferencias: { moneda: null }, plan: null, mascota: { id: 'toro', nombre: 'Toro', nivel: 1, xp: 0, animo: 'Feliz', vinculo: 0 }, amigos: [], friendRequests: [], cooperativeProjects: []
+            });
+            window.location.href = 'login.html?registered=1';
+        } catch (error) {
+            message.textContent = error.message || 'No se pudo crear la cuenta.';
+            button.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
