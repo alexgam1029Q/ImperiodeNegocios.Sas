@@ -113,8 +113,10 @@ function traducirTexto(texto) {
 }
 
 function obtenerIndiceAvatarPerfil(fotoPerfil, indiceAlternativo = 0) {
+    const savedIndex = Number(indiceAlternativo);
+    if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < FOTOS_PERFIL_PREDETERMINADAS.length) return savedIndex;
     const match = String(fotoPerfil || '').match(/(?:^|\/)perfil-(\d{2})\.png(?:\?|$)/i);
-    const index = match ? Number(match[1]) - 1 : Number(indiceAlternativo);
+    const index = match ? Number(match[1]) - 1 : 0;
     return Number.isInteger(index) && index >= 0 && index < FOTOS_PERFIL_PREDETERMINADAS.length ? index : 0;
 }
 
@@ -139,6 +141,7 @@ function aplicarIdioma() {
     // La interfaz permanece en español hasta reactivar idiomas.
 }
 let portafolio = {};
+let colaGuardado = Promise.resolve();
 let logrosCompletados = [];
 let flagProfit1k = false, flagNoDebt = false, flagFirstBuy = false;
 let prestamosActivos = 0;
@@ -410,7 +413,9 @@ if (typeof Chart !== 'undefined') Chart.register({
 
 function initChart() {
     if (typeof Chart === 'undefined') return;
-    const ctxPanel = document.getElementById('graficaPanel').getContext('2d');
+    const canvasPanel = document.getElementById('graficaPanel');
+    if (!canvasPanel) return;
+    const ctxPanel = canvasPanel.getContext('2d');
     startNetPanel = getPatrimonioNeto() || 10000;
         chartPanel = new Chart(ctxPanel, {
         type: 'line',
@@ -602,6 +607,14 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     }
     if (!u) return toast("Datos incorrectos", "error", { allowOnLoginScreen: true });
     user = u.__username || user;
+    try {
+        const respaldo = JSON.parse(localStorage.getItem(`imperio_pending_save_${user.toLowerCase()}`) || 'null');
+        if (respaldo?.data && respaldo.username === user.toLowerCase()) {
+            u = { ...u, ...respaldo.data, __username: u.__username };
+        }
+    } catch (error) {
+        console.warn('No se pudo recuperar el respaldo local:', error);
+    }
     usuarioActual = user.toLowerCase();
     try {
         idPublico = await db.getSequentialPublicId(usuarioActual);
@@ -1031,11 +1044,11 @@ function confirmarPagoPlan() {
 async function iniciarJuego() {
     document.getElementById('plansScreen').style.display = 'none';
     renderSidebarMenu();
+    mostrar('panel');
     initChart();
     dibujarTienda();
     actualizarTodo();
     renderLogros();
-    mostrar('panel');
     initAsesores();
     initHabilidades();
     renderReputacion();
@@ -1089,8 +1102,22 @@ async function guardar(propagateError = false) {
     };
     saveData.sectores = new Set(Object.keys(portafolio).map(empresa => empresaMeta[empresa]?.sector).filter(Boolean)).size;
     if (correoActual) saveData.email = correoActual;
+    const backupKey = `imperio_pending_save_${usuarioActual}`;
+    const backupValue = JSON.stringify({ username: usuarioActual, data: saveData });
     try {
-        await db.saveUser(usuarioActual, saveData);
+        localStorage.setItem(backupKey, backupValue);
+    } catch (error) {
+        console.warn('No se pudo crear el respaldo local:', error);
+    }
+    const guardado = colaGuardado.then(() => db.saveUser(usuarioActual, saveData));
+    colaGuardado = guardado.catch(() => {});
+    try {
+        await guardado;
+        try {
+            if (localStorage.getItem(backupKey) === backupValue) localStorage.removeItem(backupKey);
+        } catch (error) {
+            console.warn('No se pudo limpiar el respaldo local:', error);
+        }
     } catch (e) {
         console.warn("Error guardando progreso:", e);
         if (propagateError) throw e;
@@ -1281,7 +1308,7 @@ function renderMascota2D(mascota) {
     if (!contenedor) return;
     if (petAnimationFrame) cancelAnimationFrame(petAnimationFrame);
     const imagen = document.createElement('img');
-    imagen.src = getAssetUrl(`assets/mascotas/${mascota.id}.png`);
+    imagen.src = getAssetUrl(`assets/mascotas/${mascota.id}.png?v=1`);
     imagen.alt = mascota.nombre;
     imagen.className = 'profile-pet-image';
     imagen.onerror = () => {
@@ -1333,7 +1360,7 @@ function renderMascotas() {
     if (grid) {
         grid.innerHTML = MASCOTAS.map(item => `
             <button type="button" class="profile-pet-option${item.id === mascotaActual.id ? ' selected' : ''}" onclick="seleccionarMascota('${item.id}')" title="${item.especialidad}">
-                <img src="${getAssetUrl(`assets/mascotas/${item.id}.png`)}" alt="${item.nombre}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createTextNode('${item.emoji}'))"><small>${item.nombre}</small>
+                <img src="${getAssetUrl(`assets/mascotas/${item.id}.png?v=1`)}" alt="${item.nombre}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createTextNode('${item.emoji}'))"><small>${item.nombre}</small>
             </button>
         `).join('');
     }
@@ -1528,11 +1555,9 @@ function seleccionarAvatarPerfil(index, event) {
     event?.stopPropagation();
     if (!Number.isInteger(index) || index < 0 || index >= FOTOS_PERFIL_PREDETERMINADAS.length) return;
     avatarSeleccionado = index;
+    usuarioFotoPerfil = FOTOS_PERFIL_PREDETERMINADAS[index];
     actualizarAvatarCuerpoCompleto();
-    if (!usuarioFotoPerfil.startsWith('data:image/')) {
-        usuarioFotoPerfil = FOTOS_PERFIL_PREDETERMINADAS[index];
-        actualizarFotoPerfil();
-    }
+    actualizarFotoPerfil();
     renderAvataresPerfil();
     document.getElementById('profileAvatarsGrid')?.classList.remove('open');
     guardar();
@@ -1680,18 +1705,17 @@ async function confirmDeleteAccount() {
 }
 
 async function cerrarSesion() {
-    try {
-        await db.signOutAuth();
-    } catch (error) {
+    guardar(true).catch(error => {
+        console.warn('No se pudo guardar el progreso antes de cerrar sesión:', error);
+    });
+    db.signOutAuth().catch(error => {
         console.warn('No se pudo cerrar sesión en Google:', error);
-    }
+    });
     sessionStorage.removeItem('imperio_session_token');
     db.token = '';
     usuarioActual = '';
     correoActual = '';
-    cerrarAjustes();
-    toast('Sesión cerrada', 'info');
-    setTimeout(() => window.location.reload(), 250);
+    window.location.replace('login.html');
 }
 
 // Guardado automatico cada 15s
@@ -4280,6 +4304,9 @@ function mostrar(id) {
     
     // Force render on navigation
     if (id === 'invertir') dibujarTienda();
+    if (id === 'portafolio' && chartPortafolio) {
+        requestAnimationFrame(() => chartPortafolio.resize());
+    }
     if (id === 'asesores') { renderAsesores(); renderPredicciones(); renderHistorialPredicciones(); }
     if (id === 'habilidades') renderHabilidades();
     if (id === 'reputacion') renderReputacion();
@@ -4357,7 +4384,7 @@ async function verPerfilSocial(encodedUsername) {
         const avatarIndex = obtenerIndiceAvatarPerfil(profile.fotoPerfil, profile.avatarSeleccionado);
         const mascota = MASCOTAS.find(item => item.id === profile.mascota?.id) || MASCOTAS[0];
         const profilePhoto = String(profile.fotoPerfil || '');
-        document.getElementById('socialInspectPetDisplay').innerHTML = `<img class="profile-pet-image" src="${getAssetUrl(`assets/mascotas/${mascota.id}.png`)}" alt="${mascota.nombre}" loading="lazy" decoding="async">`;
+        document.getElementById('socialInspectPetDisplay').innerHTML = `<img class="profile-pet-image" src="${getAssetUrl(`assets/mascotas/${mascota.id}.png?v=1`)}" alt="${mascota.nombre}" loading="lazy" decoding="async">`;
         document.getElementById('socialInspectPetName').textContent = `${mascota.nombre} · Nivel ${profile.mascota?.nivel || 1}`;
         document.getElementById('socialInspectPetDescription').textContent = mascota.descripcion;
         document.getElementById('socialInspectAvatar').src = profilePhoto.startsWith('data:image/')

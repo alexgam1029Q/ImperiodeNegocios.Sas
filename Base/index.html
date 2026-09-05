@@ -21,14 +21,6 @@
 <link rel="manifest" href="json/manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/logos/app-icon-192.png">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏦%3C/text%3E%3C/svg%3E">
-<script>
-    window.instalacionPendientePWA = null;
-    window.addEventListener('beforeinstallprompt', event => {
-        event.preventDefault();
-        window.instalacionPendientePWA = event;
-            window.avisoInstalacionMostrado = false;
-    });
-</script>
 <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -259,10 +251,6 @@
 
 <!-- LOGIN -->
 <div id="loginScreen" class="login-screen" style="display:none;">
-    <button id="loginInstallAppBtn" class="login-install-app-btn" type="button" aria-label="Instalar aplicación">
-        <img src="assets/logos/app-icon-192.png" alt="" width="22" height="22" aria-hidden="true" decoding="async">
-        <span>Instalar app</span>
-    </button>
     <img src="assets/logos/logo.png" class="logo-img" alt="Logo" fetchpriority="high" decoding="async" style="width:180px; height:auto; object-fit:contain; filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.7)); animation: float 3s ease-in-out infinite;">
     <div class="login-box">
         <h1 style="color: var(--primary); font-size: 22px; letter-spacing: 2px; margin: 0 0 25px; text-align: center; text-shadow: 0 0 10px var(--primary);">IMPERIO DE NEGOCIOS</h1>
@@ -345,10 +333,6 @@
             </div>
         </div>
         <div style="font-size: 1.1em;">⭐ Nivel <span id="nivelHeader" style="color: var(--primary); font-weight: 800;">1</span></div>
-        <button id="installAppBtn" class="header-btn install-app-btn" type="button" aria-label="Instalar aplicación">
-            <img src="assets/logos/app-icon-192.png" alt="" width="20" height="20" aria-hidden="true" decoding="async">
-            <span>Instalar app</span>
-        </button>
         <button class="header-btn" onclick="abrirAjustes()">⚙️ Ajustes</button>
         <div style="font-size: 0.9em; color: #666; display:none;" id="eventoActivoBadge"></div>
     </div>
@@ -841,9 +825,9 @@
     </div>
 </div>
 
-    <script defer src="js/services/db.js?v=66"></script>
+    <script defer src="js/services/db.js?v=68"></script>
     <script defer src="js/data/gameData.js"></script>
-    <script defer src="js/core/app.js?v=112"></script>
+    <script defer src="js/core/app.js?v=115"></script>
     <script>
         window.addEventListener('load', () => {
             const tieneCallbackOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
@@ -852,45 +836,9 @@
         });
         if ('serviceWorker' in navigator) {
             if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') {
-                window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=77').catch(() => {}));
+                window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=78').catch(() => {}));
             }
         }
-        function actualizarEstadoInstalacion() {
-            const instalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-            document.querySelectorAll('#installAppBtn, #loginInstallAppBtn').forEach(button => {
-                button.hidden = instalada;
-            });
-        }
-        async function instalarAplicacion() {
-            if (window.instalacionEnCurso) return;
-            const instalacionPendiente = window.instalacionPendientePWA;
-            if (!instalacionPendiente) {
-                if (window.avisoInstalacionMostrado) return;
-                window.avisoInstalacionMostrado = true;
-                if (typeof toast === 'function') {
-                    toast('La instalación no está disponible en este momento. Abre el menú del navegador y elige "Instalar aplicación".', 'info', { allowOnLoginScreen: true });
-                } else {
-                    alert('La instalación no está disponible en este momento. Abre el menú del navegador y elige "Instalar aplicación".');
-                }
-                return;
-            }
-            window.instalacionEnCurso = true;
-            try {
-                instalacionPendiente.prompt();
-                await instalacionPendiente.userChoice;
-                window.instalacionPendientePWA = null;
-                actualizarEstadoInstalacion();
-            } finally {
-                window.instalacionEnCurso = false;
-            }
-        }
-        document.querySelectorAll('#installAppBtn, #loginInstallAppBtn').forEach(button => button.addEventListener('click', instalarAplicacion));
-        window.addEventListener('beforeinstallprompt', actualizarEstadoInstalacion);
-        window.addEventListener('appinstalled', () => {
-            window.instalacionPendientePWA = null;
-            actualizarEstadoInstalacion();
-        });
-        actualizarEstadoInstalacion();
     </script>
 </body>
 </html>

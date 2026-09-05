@@ -11,14 +11,10 @@
     window.SUPABASE_URL = 'https://chcuojprqzpiyknnkhwn.supabase.co';
     window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNoY3VvanBycXpwaXlrbm5raHduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MTcxNjIsImV4cCI6MjEwMTE5MzE2Mn0.0vqJEIe-ZtMuYSsr_7vbMk8NyawVGqBx7scVpgEuYW0';
 </script>
-<script defer src="js/services/db.js?v=64"></script>
+<script defer src="js/services/db.js?v=68"></script>
 </head>
 <body>
 <div class="login-screen" id="loginPage">
-    <button id="loginInstallAppBtn" class="login-install-app-btn" type="button" aria-label="Instalar aplicación">
-        <img src="assets/logos/app-icon-192.png" alt="" width="22" height="22" aria-hidden="true">
-        <span>Instalar app</span>
-    </button>
     <img src="assets/logos/logo.png" class="logo-img" alt="Logo">
     <div class="login-box">
         <h1 style="color: var(--primary); font-size: 22px; letter-spacing: 2px; margin: 0 0 25px; text-align: center; text-shadow: 0 0 10px var(--primary);">INICIAR SESIÓN</h1>
@@ -43,29 +39,8 @@
 </div>
 <script>
     const message = document.getElementById('loginMessage');
-    const installButton = document.getElementById('loginInstallAppBtn');
-    const appInstalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    installButton.hidden = appInstalada;
-    let instalacionPendiente = null;
-    window.addEventListener('beforeinstallprompt', event => {
-        event.preventDefault();
-        instalacionPendiente = event;
-    });
-    installButton.addEventListener('click', async () => {
-        if (!instalacionPendiente) {
-            alert('La instalación no está disponible todavía. Abre el menú del navegador y elige "Instalar aplicación".');
-            return;
-        }
-        instalacionPendiente.prompt();
-        await instalacionPendiente.userChoice;
-        instalacionPendiente = null;
-    });
-    window.addEventListener('appinstalled', () => {
-        instalacionPendiente = null;
-        installButton.hidden = true;
-    });
     if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost' && 'serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js?v=77').catch(() => {});
+        navigator.serviceWorker.register('sw.js?v=78').catch(() => {});
     }
     document.getElementById('googleLoginButton').addEventListener('click', async () => {
         try { await db.signInWithGoogle(); } catch (error) { message.textContent = error.message || 'No se pudo iniciar sesión con Google.'; }

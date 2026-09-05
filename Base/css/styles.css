@@ -28,9 +28,6 @@
         display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
     }
     #loginScreen { justify-content: flex-start; overflow-y: auto; padding: 28px 16px 72px; }
-    .login-screen .login-install-app-btn { position: absolute; top: 18px; right: 18px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: auto; min-height: 0; margin: 0; padding: 9px 13px; border: 1px solid rgba(0,212,255,0.35); border-radius: 999px; background: rgba(0,212,255,0.1); color: var(--primary); font-size: 0.9em; font-weight: 700; cursor: pointer; }
-    .login-screen .login-install-app-btn:hover { background: rgba(0,212,255,0.18); color: var(--primary); transform: translateY(-1px); }
-    .login-install-app-btn img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
     .logo-img { width: 140px; height: auto; margin-bottom: 25px; filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.7)); animation: float 3s ease-in-out infinite; }
     .login-screen .logo-img { width: min(240px, 70vw) !important; height: auto !important; }
     img[src^="data:image/png;base64,"] { content: url("../assets/logos/logo.png"); }
@@ -115,8 +112,6 @@
         padding: 8px 12px; border-radius: 999px; font-weight: 700; cursor: pointer; transition: 0.2s;
     }
     .header-btn:hover { background: rgba(0,212,255,0.16); transform: translateY(-1px); }
-    .install-app-btn { display: inline-flex; align-items: center; gap: 7px; }
-    .install-app-btn img { width: 20px; height: 20px; object-fit: contain; border-radius: 5px; }
     .container { display: flex; min-width: 0; }
 
     /* Sidebar */

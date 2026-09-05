@@ -301,12 +301,11 @@ class BackendDB {
     async signInWithGoogle() {
         this.ensureSupabase();
         if (!this.supabase?.auth) throw new Error('Supabase Auth no está disponible.');
+        const callbackUrl = new URL('index.html', window.location.href).href;
         const { error } = await this.supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.pathname.endsWith('/login.html')
-                    ? new URL('index.html', window.location.href).href
-                    : window.location.href.split('#')[0],
+                redirectTo: callbackUrl,
                 queryParams: { prompt: 'select_account' }
             }
         });
@@ -394,6 +393,11 @@ class BackendDB {
     async getAuthProfile() {
         this.ensureSupabase();
         if (!this.supabase?.auth) return null;
+        const authorizationCode = new URLSearchParams(window.location.search).get('code');
+        if (authorizationCode) {
+            const { error: exchangeError } = await this.supabase.auth.exchangeCodeForSession(authorizationCode);
+            if (exchangeError) throw exchangeError;
+        }
         const { data, error } = await this.supabase.auth.getSession();
         if (error) throw error;
         const user = data.session?.user;

@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Serve Base site",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "py -3 -m http.server 8000 --directory \"${workspaceFolder}\\Base\"",
+      "cwd": "${workspaceFolder}",
+      "serverReadyAction": {
+        "pattern": "Serving HTTP on",
+        "uriFormat": "http://127.0.0.1:8000/",
+        "action": "openExternally"
+      }
+    }
+  ]
+}

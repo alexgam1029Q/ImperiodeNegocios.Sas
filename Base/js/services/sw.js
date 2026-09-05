@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imperio-shell-v80';
+const CACHE_NAME = 'imperio-shell-v58';
 const APP_SHELL = [
     './',
     './index.html',
@@ -9,6 +9,7 @@ const APP_SHELL = [
     './json/manifest.webmanifest',
     './assets/logos/app-icon-192.png',
     './assets/logos/app-icon-512.png',
+    './assets/qr/qr.png'
 ];
 
 self.addEventListener('install', event => {
@@ -31,14 +32,10 @@ self.addEventListener('fetch', event => {
     if (requestUrl.origin !== self.location.origin) return;
 
     event.respondWith(
-        fetch(event.request).then(response => {
+        caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
             const copy = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
             return response;
-        }).catch(() => caches.match(event.request).then(cached => {
-            if (cached) return cached;
-            if (event.request.mode === 'navigate') return caches.match('./index.html');
-            return Response.error();
-        }))
+        }).catch(() => caches.match('./index.html')))
     );
 });
