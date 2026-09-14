@@ -1,4 +1,8 @@
 ﻿// CATEGORIAS data imported from js/data/gameData.js
+// El analisis del asesor queda local por defecto para GitHub Pages.
+// Si luego quieres usar un backend real, define window.IA_BACKEND_URL antes de cargar la app.
+window.IA_BACKEND_URL = window.IA_BACKEND_URL || '';
+
 // Lista plana de todas las empresas para predicciones
 let TODAS_EMPRESAS = [];
 
@@ -7,6 +11,8 @@ let preciosMercado = {};
 let empresaMeta = {};
 let sectorBoost = {};
 let eventoActivo = null;
+let mercadoGlobal = { estado: 'estable', fuerza: 0, restante: 0 };
+let eventosEmpresaActivos = {};
 
 // Estado del juego
 let capital = 10000, deuda = 0, gananciasTotal = 0, perdidasTotal = 0;
@@ -170,8 +176,27 @@ function renderSidebarMenu() {
     const sidebar = document.getElementById('sidebarMenu');
     if (!sidebar) return;
         sidebar.innerHTML = SECTION_CONFIG.map(section => `
-        <button id="btn-${section.id}" onclick="mostrar('${section.id}')">${traducirTexto(section.label)}</button>
+        <button id="btn-${section.id}" onclick="mostrar('${section.id}'); cerrarSidebarMenu()" aria-pressed="false">${traducirTexto(section.label)}</button>
     `).join('');
+}
+
+function toggleSidebarMenu(event) {
+    event?.stopPropagation();
+    const sidebar = document.getElementById('sidebarMenu');
+    const toggle = document.getElementById('sidebarToggle');
+    if (!sidebar || !toggle) return;
+    const abierto = sidebar.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(abierto));
+    toggle.setAttribute('aria-label', abierto ? 'Cerrar menú principal' : 'Abrir menú principal');
+}
+
+function cerrarSidebarMenu() {
+    const sidebar = document.getElementById('sidebarMenu');
+    const toggle = document.getElementById('sidebarToggle');
+    if (!sidebar || !toggle) return;
+    sidebar.classList.remove('open');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Abrir menú principal');
 }
 
 // Nuevas variables globales
@@ -287,6 +312,9 @@ function initMercado() {
                 sector: cat,
                 basePrice: e.p,
                 vol: vol,
+                tendencia: (Math.random() - 0.5) * 0.0008,
+                impulsoEvento: 0,
+                recuperacion: 0,
                 historial: [0,0,0,0,0]
             };
             TODAS_EMPRESAS.push(e.n);
@@ -665,6 +693,9 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     habilidadesDesbloqueadas = u.habilidades || {};
     reputacion = u.reputacion || 50;
     eventosReputacion = u.eventosRep || [];
+        mercadoGlobal = u.mercadoGlobal || { estado: 'estable', fuerza: 0, restante: 0 };
+        eventosEmpresaActivos = u.eventosMercado || {};
+        noticiasHistorial = u.noticiasHistorial || [];
     misionesReputacion = (u.misionesRep || []).map(m => ({
         ...m,
         tiempo: 300,
@@ -686,7 +717,7 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     planActual = PLANES[u.plan] ? u.plan : null;
     mascotaActual = u.mascota && MASCOTAS.some(m => m.id === u.mascota.id) ? { ...mascotaActual, ...u.mascota } : { ...mascotaActual };
     tarjetaGlobal = u.tarjetaGlobal ? Object.assign(JSON.parse(JSON.stringify(tarjetaDefault)), u.tarjetaGlobal) : JSON.parse(JSON.stringify(tarjetaDefault));
-    deuda = 0;
+    deuda = Number(u.deuda) || 0;
     renderTarjetaVirtual();
 
     if (eventosReputacion.length === 0) {
@@ -702,6 +733,18 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
             });
         } catch(e){}
     }
+    if (u.tendenciasMercado) {
+        Object.entries(u.tendenciasMercado).forEach(([empresa, estado]) => {
+            if (empresaMeta[empresa]) Object.assign(empresaMeta[empresa], estado);
+        });
+    }
+    Object.entries(eventosEmpresaActivos).forEach(([empresa, evento]) => {
+        if (!empresaMeta[empresa] || evento.restante <= 0) {
+            delete eventosEmpresaActivos[empresa];
+            return;
+        }
+        empresaMeta[empresa].impulsoEvento = Number(evento.impacto || 0) / Math.max(1, Number(evento.duracion || evento.restante));
+    });
 
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("preferencesScreen").style.display = usernamePendiente || !monedaGuardada ? "flex" : "none";
@@ -1072,6 +1115,14 @@ async function guardar(propagateError = false) {
         logros: logrosCompletados,
         flags: { profit1k: flagProfit1k, nodebt: flagNoDebt, firstbuy: flagFirstBuy },
         precios: JSON.stringify(preciosMercado),
+        mercadoGlobal,
+        eventosMercado: eventosEmpresaActivos,
+        tendenciasMercado: Object.fromEntries(Object.entries(empresaMeta).map(([empresa, meta]) => [empresa, {
+            tendencia: meta.tendencia || 0,
+            recuperacion: meta.recuperacion || 0,
+            historial: (meta.historial || []).slice(-30)
+        }])),
+        noticiasHistorial: noticiasHistorial.slice(0, 40),
         asesores: asesoresEstado,
         predicciones: prediccionesActivas,
         predHistorial: prediccionesHistorial,
@@ -2686,6 +2737,403 @@ setInterval(() => {
 // NOTICIAS CON IMPACTO REAL
 // ==========================================
 let noticiasHistorial = [];
+const NOTICIAS_POR_EMPRESA = {};
+
+function registrarNoticiasEmpresa(empresa, positivas = [], negativas = []) {
+    if (!empresa) return;
+    if (!NOTICIAS_POR_EMPRESA[empresa]) {
+        NOTICIAS_POR_EMPRESA[empresa] = { positivo: [], negativo: [] };
+    }
+    const normalizar = (frases) => (Array.isArray(frases) ? frases.map(texto => String(texto || '').trim()).filter(Boolean) : []);
+    const agregarSinDuplicados = (destino, frases) => {
+        frases.forEach(frase => {
+            if (!destino.includes(frase)) destino.push(frase);
+        });
+    };
+    agregarSinDuplicados(NOTICIAS_POR_EMPRESA[empresa].positivo, normalizar(positivas));
+    agregarSinDuplicados(NOTICIAS_POR_EMPRESA[empresa].negativo, normalizar(negativas));
+}
+
+async function cargarNoticiasDesdeArchivo(ruta, sector) {
+    try {
+        const respuesta = await fetch(ruta, { cache: 'no-cache' });
+        if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+        const markdown = await respuesta.text();
+        const lineas = markdown.split(/\r?\n/);
+        let empresa = '';
+        let tipo = '';
+        const noticias = {};
+
+        lineas.forEach(linea => {
+            const encabezadoEmpresa = linea.match(/^##\s+(.+?)\s*$/);
+            const encabezadoTipo = linea.match(/^###\s+(Positivas|Negativas)\s*$/i);
+            const noticia = linea.match(/^\s*\d+[.)]\s+(.+?)\s*$/);
+            if (encabezadoEmpresa) {
+                empresa = encabezadoEmpresa[1].trim();
+                tipo = '';
+                noticias[empresa] = { positivo: [], negativo: [] };
+            } else if (encabezadoTipo) {
+                tipo = encabezadoTipo[1].toLowerCase() === 'positivas' ? 'positivo' : 'negativo';
+            } else if (empresa && tipo && noticia) {
+                noticias[empresa][tipo].push(noticia[1].trim());
+            }
+        });
+
+        Object.entries(noticias).forEach(([nombre, datos]) => {
+            if (!datos.positivo.length && !datos.negativo.length) return;
+            NOTICIAS_POR_EMPRESA[nombre] = { positivo: [], negativo: [] };
+            registrarNoticiasEmpresa(nombre, datos.positivo, datos.negativo);
+        });
+
+        console.info(`[Noticias] ${Object.keys(noticias).length} empresas cargadas desde ${sector}`);
+        return Object.keys(noticias).length;
+    } catch (error) {
+        console.warn(`[Noticias] Se mantiene el contenido local de ${sector}:`, error.message);
+        return 0;
+    }
+}
+
+async function cargarNoticiasLocales() {
+    await Promise.all([
+        cargarNoticiasDesdeArchivo('noticias/Finanzas.md', 'Finanzas'),
+        cargarNoticiasDesdeArchivo('noticias/Tecnologia.md', 'Tecnologia')
+    ]);
+}
+
+function obtenerNoticiaEmpresaAleatoria(empresa, sector, tipo = null) {
+    const mapa = NOTICIAS_POR_EMPRESA[empresa];
+    if (!mapa) return null;
+    const lado = tipo || (Math.random() < 0.5 ? 'positivo' : 'negativo');
+    const lista = mapa[lado] || [];
+    if (!lista.length) return null;
+    const noticiasRecientes = new Set(
+        noticiasHistorial
+            .filter(noticia => noticia.empresa === empresa && noticia.tipo === lado)
+            .slice(0, Math.min(5, lista.length - 1))
+            .map(noticia => noticia.textoOriginal || noticia.texto)
+    );
+    const disponibles = lista.filter(texto => !noticiasRecientes.has(texto));
+    const texto = (disponibles.length ? disponibles : lista)[Math.floor(Math.random() * (disponibles.length || lista.length))];
+    const positiva = lado === 'positivo';
+    const descripcionBase = generarContextoNoticia(sector, positiva, empresa);
+    return {
+        empresa,
+        sector,
+        tipo: lado,
+        titulo: positiva ? `${empresa} refuerza su posición en el mercado` : `${empresa} enfrenta presión en el mercado`,
+        contexto: descripcionBase,
+        texto: `${texto} ${descripcionBase}`,
+        textoOriginal: texto,
+        confianza: positiva ? 'Alta' : 'Media',
+        horizonte: positiva ? 'Mediano plazo' : 'Corto plazo',
+        impacto: positiva ? 0.08 + Math.random() * 0.14 : -(0.08 + Math.random() * 0.14),
+        creadaEn: Date.now(),
+        terminaEn: Date.now() + 18000
+    };
+}
+
+const NOTICIAS_PREDEFINIDAS = [
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El crédito empresarial recupera ritmo y favorece a la banca', texto: 'Una mayor demanda de financiación por parte de empresas mejora las perspectivas de ingresos por intereses y servicios financieros.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La morosidad se mantiene bajo control pese al entorno económico', texto: 'Los indicadores de cartera muestran una evolución estable, reduciendo la presión sobre provisiones.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El banco amplía su cartera de clientes digitales', texto: 'La incorporación de nuevos usuarios permite aumentar operaciones sin depender exclusivamente de la expansión física.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Una nueva alianza fortalece el negocio de pagos', texto: 'El acuerdo amplía la red comercial y abre una nueva fuente de ingresos por transacciones.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La banca empresarial aumenta la demanda de financiación', texto: 'El mayor movimiento de compañías pequeñas y medianas impulsa solicitudes de crédito.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los depósitos crecen y mejoran la liquidez', texto: 'El aumento de recursos captados proporciona mayor capacidad para financiar nuevas operaciones.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La presión sobre los márgenes comienza a aumentar', texto: 'El entorno competitivo obliga a ajustar las condiciones ofrecidas a clientes y reduce parte del margen financiero.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'Aumentan las provisiones ante un escenario más incierto', texto: 'La entidad adopta una posición más conservadora frente a posibles deterioros de cartera.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El crecimiento de las tarjetas impulsa los ingresos por comisiones', texto: 'Un mayor volumen de compras fortalece el negocio de medios de pago.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La entidad acelera la apertura de oficinas especializadas', texto: 'La estrategia busca captar clientes empresariales en zonas con creciente actividad económica.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los resultados trimestrales superan las previsiones internas', texto: 'Una combinación de mayor actividad crediticia y control de gastos mejora el resultado operativo.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El banco reduce costos mediante automatización', texto: 'Nuevas herramientas digitales permiten trasladar operaciones repetitivas a procesos automatizados.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La competencia por captar clientes presiona las tasas', texto: 'Las entidades comienzan a ofrecer condiciones más agresivas para ganar participación.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La cartera hipotecaria muestra señales de recuperación', texto: 'Un mayor número de solicitudes podría traducirse en crecimiento del negocio durante los siguientes meses.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'Las empresas retrasan nuevas solicitudes de crédito', texto: 'La incertidumbre lleva a algunas compañías a posponer inversiones y proyectos de expansión.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La banca de inversión gana actividad', texto: 'Un aumento de fusiones, emisiones y operaciones corporativas mejora las expectativas del segmento.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El banco fortalece su posición de capital', texto: 'Una mejora en sus indicadores financieros amplía el margen para afrontar nuevos ciclos de inversión.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La actividad de pagos alcanza un nuevo máximo', texto: 'El incremento de transacciones comerciales genera mayores ingresos para la entidad.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'El aumento de tasas cambia las decisiones de los clientes', texto: 'Parte de los usuarios comienza a priorizar productos de ahorro frente a alternativas de mayor riesgo.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La entidad gana participación en el segmento empresarial', texto: 'Nuevos contratos corporativos permiten ampliar su presencia entre compañías de diferentes tamaños.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Una cartera diversificada reduce el impacto de la desaceleración', texto: 'La exposición a distintos sectores permite compensar la debilidad de algunas industrias.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'El crecimiento de préstamos de consumo pierde velocidad', texto: 'Las familias muestran mayor prudencia antes de asumir nuevas obligaciones financieras.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La entidad mejora su eficiencia operativa', texto: 'Una reducción de gastos administrativos permite conservar una mayor proporción de los ingresos.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El mercado recibe favorablemente el nuevo plan estratégico', texto: 'Los inversores valoran el enfoque en crecimiento rentable y disciplina financiera.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'Una revisión de riesgo obliga a endurecer algunas condiciones', texto: 'La entidad busca proteger la calidad de su cartera ante un entorno más volátil.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los servicios financieros digitales ganan peso en los ingresos', texto: 'La expansión de canales móviles comienza a modificar la estructura tradicional del negocio.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El banco incrementa su exposición a empresas exportadoras', texto: 'La estrategia busca aprovechar el crecimiento de compañías con ingresos internacionales.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La menor actividad económica afecta nuevas colocaciones', texto: 'La demanda de financiación se desacelera mientras las empresas esperan mayor claridad sobre el futuro.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los resultados muestran una mejora en la calidad de cartera', texto: 'Menores niveles de deterioro reducen las necesidades de provisiones.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'La entidad prepara una nueva etapa de expansión regional', texto: 'La estrategia contempla entrar en mercados donde existe una creciente demanda de servicios financieros.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La demanda empresarial de software acelera', texto: 'Nuevos contratos corporativos elevan las previsiones de ingresos recurrentes.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La compañía presenta una plataforma enfocada en automatización', texto: 'El nuevo producto busca reducir tareas repetitivas en empresas de distintos sectores.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Un contrato corporativo amplía la cartera tecnológica', texto: 'El acuerdo garantiza nuevos ingresos y aumenta la visibilidad sobre el crecimiento futuro.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La inversión en centros de datos aumenta', texto: 'La empresa prepara capacidad adicional para responder al crecimiento de servicios digitales.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'La competencia por talento tecnológico eleva los costos', texto: 'La necesidad de contratar especialistas presiona los gastos operativos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La inteligencia artificial comienza a generar nuevos ingresos', texto: 'La adopción empresarial de herramientas de IA abre una nueva línea comercial.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La compañía amplía su infraestructura de computación', texto: 'La inversión permitirá atender una mayor demanda de servicios intensivos en procesamiento.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Un producto recibe una respuesta mejor de la esperada', texto: 'El aumento de usuarios mejora las expectativas comerciales para los próximos meses.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'La empresa retrasa el lanzamiento de una nueva plataforma', texto: 'Problemas técnicos obligan a modificar el calendario previsto.' },
+    { sector: 'IA', tipo: 'negativo', titulo: 'El mercado cuestiona el elevado gasto en IA', texto: 'Los inversores comienzan a exigir señales más claras de rentabilidad sobre las inversiones realizadas.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Una alianza tecnológica abre un nuevo mercado', texto: 'La colaboración permite distribuir los servicios de la empresa a una base de clientes más amplia.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La demanda de servicios en la nube continúa aumentando', texto: 'El crecimiento de empresas digitales impulsa el consumo de infraestructura tecnológica.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La empresa reduce costos mediante nuevos sistemas automatizados', texto: 'La mejora de productividad fortalece las perspectivas de margen.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'La competencia reduce los precios del software', texto: 'Una guerra comercial podría dificultar el crecimiento de los ingresos por cliente.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'El negocio empresarial supera al segmento de consumidores', texto: 'Los contratos corporativos comienzan a representar una parte cada vez mayor de los ingresos.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Una actualización mejora la retención de usuarios', texto: 'Las nuevas funciones reducen cancelaciones y aumentan el uso de la plataforma.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La empresa aumenta su inversión en ciberseguridad', texto: 'El gasto adicional busca proteger infraestructura crítica y reforzar la confianza de los clientes.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'Un fallo técnico afecta temporalmente el servicio', texto: 'La interrupción genera presión sobre la reputación y obliga a reforzar la infraestructura.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La demanda de chips especializados sigue creciendo', texto: 'Los fabricantes aumentan pedidos para cubrir las necesidades de centros de datos y dispositivos.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La empresa consigue un contrato para automatizar procesos industriales', texto: 'El acuerdo demuestra que la tecnología empieza a ganar terreno fuera del sector digital.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'El crecimiento internacional supera al mercado doméstico', texto: 'Las operaciones exteriores se convierten en el principal motor de expansión.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La empresa mejora sus márgenes gracias a productos premium', texto: 'Una mayor proporción de servicios de alto valor favorece la rentabilidad.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'Los costos de infraestructura tecnológica aumentan', texto: 'El crecimiento de la demanda obliga a realizar nuevas inversiones antes de generar ingresos adicionales.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La adopción de herramientas de IA se acelera entre pequeñas empresas', texto: 'El nuevo segmento amplía considerablemente el mercado potencial.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'Un competidor lanza una alternativa más barata', texto: 'La compañía podría verse obligada a ajustar precios para conservar participación.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La empresa incorpora nuevas capacidades de inteligencia artificial', texto: 'La actualización busca mejorar productividad y diferenciar el producto frente a competidores.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Las ventas empresariales mejoran por segundo periodo consecutivo', texto: 'El comportamiento refuerza las expectativas de crecimiento sostenido.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'Una expansión internacional eleva los gastos iniciales', texto: 'La nueva operación todavía requiere inversiones importantes antes de alcanzar rentabilidad.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'La empresa obtiene acceso a nuevos canales de distribución', texto: 'El acuerdo comercial facilita la llegada a clientes que antes eran difíciles de alcanzar.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'El mercado tecnológico entra en una nueva fase de consolidación', texto: 'Las empresas con mayor capacidad financiera comienzan a ganar terreno frente a competidores pequeños.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La producción energética supera las previsiones', texto: 'Una mayor eficiencia de las instalaciones permite elevar el volumen producido.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La empresa firma un contrato de suministro a largo plazo', texto: 'El acuerdo proporciona mayor estabilidad a sus ingresos futuros.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Los costos de producción aumentan', texto: 'El encarecimiento de insumos reduce parte de los márgenes previstos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'Un nuevo proyecto renovable recibe aprobación', texto: 'La autorización permite avanzar con una inversión de gran escala.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La demanda eléctrica alcanza niveles elevados', texto: 'El aumento del consumo mejora las perspectivas de generación.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La compañía amplía su capacidad solar', texto: 'Nuevas instalaciones aumentarán la producción durante los próximos periodos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'Los precios de la energía favorecen los resultados', texto: 'La mejora del mercado permite aumentar los ingresos por producción.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Un retraso afecta la entrada en operación de una planta', texto: 'El aplazamiento reduce las previsiones de producción a corto plazo.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La empresa reduce costos mediante mejoras operativas', texto: 'Una gestión más eficiente aumenta el rendimiento de sus activos.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'El mercado energético se vuelve más volátil', texto: 'Los cambios en precios dificultan las previsiones de ingresos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La inversión en almacenamiento gana importancia', texto: 'La compañía busca aprovechar mejor la generación renovable.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'Una nueva línea de transmisión mejora la capacidad operativa', texto: 'La infraestructura permite transportar energía desde nuevas zonas de producción.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La demanda industrial impulsa el consumo energético', texto: 'El aumento de actividad manufacturera beneficia a los proveedores.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La compañía acelera su transición hacia energías renovables', texto: 'La estrategia busca reducir costos y diversificar sus fuentes de generación.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Un mantenimiento no programado reduce temporalmente la producción', texto: 'La empresa deberá asumir menores ingresos mientras recupera la capacidad operativa.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La inversión extranjera llega al sector energético', texto: 'Nuevos recursos permiten financiar proyectos de mayor escala.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'El aumento de costos logísticos afecta nuevos proyectos', texto: 'El transporte de equipos y materiales encarece las inversiones.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La compañía amplía su cartera de contratos industriales', texto: 'Los nuevos acuerdos mejoran la visibilidad de ingresos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La producción renovable marca un nuevo récord', texto: 'Las condiciones operativas favorecen el rendimiento de los activos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'El mercado anticipa mayor demanda de electricidad', texto: 'Nuevas industrias y centros de datos elevan las previsiones de consumo.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Una regulación energética cambia los planes de inversión', texto: 'La empresa revisa el calendario de nuevos proyectos.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La compañía mejora el rendimiento de sus instalaciones', texto: 'Nuevas tecnologías permiten obtener más producción con la infraestructura existente.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Los precios internacionales presionan los costos', texto: 'El aumento de materias primas afecta la estructura financiera del negocio.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'Un nuevo acuerdo fortalece la comercialización de energía', texto: 'La compañía obtiene acceso a clientes industriales de largo plazo.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'El sector recibe nuevas inversiones en infraestructura', texto: 'El flujo de capital mejora las perspectivas para proveedores y generadores.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La demanda de soluciones de eficiencia energética aumenta', texto: 'Empresas buscan reducir sus costos operativos ante un entorno más exigente.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La compañía vende un activo no estratégico', texto: 'La operación libera recursos para financiar proyectos con mayor potencial.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'Un proyecto energético supera su primera etapa de construcción', texto: 'El avance reduce riesgos y acerca el inicio de operaciones.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'El mercado energético muestra señales mixtas', texto: 'Una demanda firme convive con mayores costos y elevada volatilidad de precios.' },
+    { sector: 'Energia', tipo: 'positivo', titulo: 'La empresa prepara una expansión internacional', texto: 'La estrategia busca diversificar ingresos y reducir la dependencia de un solo mercado.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La demanda de espacios logísticos aumenta con fuerza', texto: 'El crecimiento del comercio electrónico impulsa la búsqueda de bodegas cerca de los principales centros urbanos.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un nuevo proyecto residencial recibe financiación', texto: 'El acceso a capital permite iniciar una construcción que había permanecido aplazada.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La ocupación de oficinas comienza a recuperarse', texto: 'Nuevos contratos reducen los espacios disponibles y mejoran las expectativas del segmento corporativo.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'El mercado de vivienda muestra señales de estabilización', texto: 'Aunque las ventas todavía son moderadas, la actividad mensual comienza a mejorar.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una nueva zona industrial atrae inversiones', texto: 'La llegada de empresas aumenta el interés por terrenos y espacios logísticos cercanos.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'Los costos de construcción vuelven a presionar los proyectos', texto: 'Materiales y mano de obra elevan el presupuesto de nuevos desarrollos.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'La demanda de vivienda VIS pierde fuerza', texto: 'Las decisiones de compra se retrasan ante las condiciones de financiación.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un proyecto comercial supera las expectativas de ocupación', texto: 'La llegada de nuevos negocios reduce rápidamente los espacios disponibles.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Los inversionistas vuelven a mirar activos inmobiliarios', texto: 'La búsqueda de ingresos estables aumenta el interés por propiedades generadoras de renta.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una empresa inmobiliaria amplía su portafolio logístico', texto: 'La estrategia busca aprovechar el crecimiento de la distribución y el comercio electrónico.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La renovación de contratos mejora los ingresos inmobiliarios', texto: 'Una elevada tasa de permanencia proporciona mayor estabilidad al flujo de caja.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una nueva carretera cambia el atractivo de la zona', texto: 'La mejora de conectividad aumenta el interés por terrenos y proyectos residenciales.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La demanda de bodegas alcanza niveles elevados', texto: 'Empresas de distribución buscan espacios más grandes y mejor ubicados.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'El mercado de oficinas se divide entre zonas', texto: 'Los edificios con mejor ubicación y servicios muestran mayor demanda que los activos tradicionales.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un proyecto residencial recibe nuevas reservas', texto: 'El comportamiento comercial permite acelerar las siguientes etapas de construcción.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'Los compradores esperan mejores condiciones de financiación', texto: 'La incertidumbre sobre costos de crédito mantiene algunas decisiones en pausa.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La vivienda usada gana protagonismo', texto: 'Los compradores encuentran mayor variedad y flexibilidad de negociación en el mercado secundario.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una empresa vende parte de su portafolio inmobiliario', texto: 'La operación busca liberar capital y concentrarse en activos estratégicos.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'El alquiler corporativo mejora en zonas centrales', texto: 'Nuevas empresas impulsan la ocupación de oficinas bien ubicadas.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La construcción de centros logísticos se acelera', texto: 'El crecimiento de las operaciones de distribución genera nuevos proyectos.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una zona residencial comienza a atraer nuevos comercios', texto: 'El desarrollo urbano aumenta el valor potencial de los inmuebles cercanos.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'El aumento de materiales obliga a revisar presupuestos', texto: 'Constructoras ajustan costos y calendarios para evitar deterioros de margen.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La demanda de vivienda de mayor tamaño aumenta', texto: 'Los compradores buscan espacios adaptados a nuevas necesidades familiares y laborales.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un centro comercial mejora su ocupación', texto: 'La llegada de nuevos operadores comerciales fortalece los ingresos por alquiler.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La inversión institucional vuelve al sector inmobiliario', texto: 'Fondos y grandes inversores buscan activos con ingresos relativamente estables.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un proyecto obtiene licencia para iniciar construcción', texto: 'La aprobación elimina uno de los principales obstáculos para su desarrollo.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Los tiempos de venta de vivienda comienzan a reducirse', texto: 'Una mayor actividad comercial mejora las perspectivas de los desarrolladores.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La demanda de propiedades industriales continúa creciendo', texto: 'Empresas buscan ubicaciones estratégicas para ampliar operaciones.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'El sector inmobiliario enfrenta mayores costos financieros', texto: 'El encarecimiento del crédito reduce el atractivo de algunos proyectos altamente apalancados.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una cartera inmobiliaria aumenta su diversificación', texto: 'La incorporación de activos comerciales y logísticos reduce la dependencia de un solo segmento.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Los alquileres muestran mayor estabilidad', texto: 'La renovación de contratos protege los ingresos pese a un mercado más competitivo.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La reconstrucción de una zona impulsa nuevos proyectos', texto: 'La mejora de infraestructura genera oportunidades para constructoras y propietarios.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un proyecto mixto atrae nuevos inversionistas', texto: 'La combinación de vivienda, comercio y oficinas mejora su capacidad para captar diferentes tipos de demanda.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La oferta de vivienda nueva comienza a ajustarse', texto: 'Menos proyectos en desarrollo podrían reducir la presión competitiva entre constructoras.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Los terrenos industriales ganan valor estratégico', texto: 'La proximidad a corredores logísticos aumenta el interés empresarial.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Una constructora mejora sus márgenes mediante compras centralizadas', texto: 'La negociación de grandes volúmenes reduce parte de los costos de materiales.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'El mercado de alquiler residencial se mantiene activo', texto: 'La dificultad para comprar vivienda mantiene elevada la demanda por arrendamientos.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'Un nuevo desarrollo urbano cambia la dinámica de la zona', texto: 'La llegada de transporte, comercio y servicios incrementa el atractivo inmobiliario.' },
+    { sector: 'Construccion', tipo: 'negativo', titulo: 'Los inversionistas priorizan activos con flujo de caja', texto: 'La incertidumbre lleva a reducir el interés por proyectos altamente especulativos.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'La empresa prepara una nueva etapa de expansión inmobiliaria', texto: 'El plan contempla adquirir activos consolidados antes de iniciar nuevos desarrollos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Las ventas de vehículos aceleran durante el trimestre', texto: 'Una mayor demanda de particulares mejora las perspectivas de fabricantes y distribuidores.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los híbridos ganan espacio en las decisiones de compra', texto: 'Los consumidores buscan reducir consumo sin abandonar completamente los motores tradicionales.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La demanda de vehículos eléctricos aumenta', texto: 'Nuevos modelos y una oferta más amplia están ampliando el número de compradores interesados.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los SUV concentran una mayor parte de las ventas', texto: 'El cambio en las preferencias favorece a los fabricantes con una oferta amplia en este segmento.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una nueva planta aumenta la capacidad de producción', texto: 'La inversión permitirá atender una mayor demanda regional.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'Los costos de baterías comienzan a afectar los márgenes', texto: 'El fabricante enfrenta mayores gastos antes de poder trasladarlos completamente al precio final.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Un nuevo modelo recibe una respuesta superior a la prevista', texto: 'Las primeras reservas generan expectativas positivas sobre sus ventas.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La compañía reduce inventarios acumulados', texto: 'Una mejor rotación de vehículos disminuye la necesidad de descuentos comerciales.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los concesionarios reportan mayor tráfico de compradores', texto: 'El incremento de visitas mejora las expectativas de cierre durante el trimestre.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'Las ventas de vehículos comerciales pierden fuerza', texto: 'Las empresas retrasan renovaciones de flota ante un entorno económico menos predecible.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una alianza acelera el desarrollo de vehículos eléctricos', texto: 'La cooperación permite compartir costos de tecnología y acelerar nuevos lanzamientos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La compañía amplía su oferta de vehículos económicos', texto: 'La estrategia busca atraer consumidores sensibles al precio.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'Los fabricantes enfrentan mayores costos logísticos', texto: 'Problemas de transporte aumentan el costo de llevar vehículos y componentes a los mercados finales.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una nueva tecnología mejora la autonomía de los vehículos', texto: 'El avance podría ayudar a reducir una de las principales barreras de adopción eléctrica.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Las ventas de vehículos usados muestran mayor actividad', texto: 'Los compradores buscan alternativas de menor precio ante el costo de los vehículos nuevos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La financiación automotriz vuelve a ganar dinamismo', texto: 'Mejores condiciones de crédito aumentan la capacidad de compra de los consumidores.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'Un fabricante reduce su previsión anual', texto: 'La menor demanda en algunos mercados obliga a ajustar los objetivos de producción.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La producción recupera ritmo después de interrupciones', texto: 'La normalización del suministro permite aumentar nuevamente las entregas.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una marca fortalece su presencia en mercados emergentes', texto: 'Nuevos concesionarios amplían la cobertura comercial y la disponibilidad de vehículos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'El mercado premia una nueva estrategia de costos', texto: 'Los inversores valoran las medidas destinadas a proteger los márgenes.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La competencia en vehículos eléctricos se intensifica', texto: 'La llegada de nuevos modelos obliga a las marcas tradicionales a acelerar sus lanzamientos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La demanda de vehículos híbridos supera las previsiones', texto: 'El segmento se consolida como alternativa para compradores que buscan eficiencia.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una nueva fábrica genera expectativas de empleo y producción', texto: 'La inversión puede beneficiar tanto a la compañía como a proveedores locales.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'El aumento de descuentos presiona la rentabilidad', texto: 'Los fabricantes recurren a incentivos para mantener el ritmo de ventas.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los pedidos de flotas corporativas aumentan', texto: 'Empresas renuevan vehículos y generan un impulso adicional para el mercado.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'La escasez de un componente afecta la producción', texto: 'La compañía ajusta calendarios mientras busca proveedores alternativos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una marca mejora su participación de mercado', texto: 'El crecimiento de ventas supera al promedio del sector.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'El lanzamiento de un vehículo urbano atrae nuevos compradores', texto: 'El modelo apunta a consumidores que priorizan precio, tamaño y eficiencia.' },
+    { sector: 'Automotriz', tipo: 'negativo', titulo: 'Los costos de financiación frenan algunas compras', texto: 'Las cuotas más elevadas llevan a los consumidores a aplazar decisiones.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La empresa acelera la transición hacia plataformas eléctricas', texto: 'La inversión busca reducir costos de desarrollo y compartir componentes entre modelos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'El mercado de vehículos premium muestra mayor resistencia', texto: 'La demanda de clientes de altos ingresos se mantiene estable pese a la incertidumbre.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una nueva red de carga mejora las perspectivas eléctricas', texto: 'La ampliación de infraestructura facilita la adopción de vehículos eléctricos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Las exportaciones aumentan durante el periodo', texto: 'La mayor demanda internacional compensa parcialmente una desaceleración doméstica.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los inventarios vuelven a niveles saludables', texto: 'Una mejor planificación permite equilibrar producción y demanda.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una marca anuncia una renovación completa de su gama', texto: 'La estrategia busca recuperar competitividad frente a nuevos participantes.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Los proveedores de autopartes reciben nuevos contratos', texto: 'El crecimiento de producción beneficia a toda la cadena automotriz.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'La demanda de motocicletas se fortalece', texto: 'El menor costo de adquisición impulsa alternativas de movilidad urbana.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'El mercado automotor entra en una fase de mayor competencia', texto: 'Las marcas compiten mediante tecnología, financiación y nuevos modelos.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'Una empresa mejora sus entregas pese a las restricciones logísticas', texto: 'La recuperación de suministros permite cerrar el periodo con mejores resultados.' },
+    { sector: 'Automotriz', tipo: 'positivo', titulo: 'El sector espera un segundo semestre más activo', texto: 'Las reservas y pedidos anticipados apuntan a una recuperación gradual de la demanda.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Las ventas minoristas sorprenden al alza', texto: 'Un mayor gasto de los consumidores mejora las perspectivas de las principales cadenas.' },
+    { sector: 'Consumo', tipo: 'negativo', titulo: 'Los compradores cambian hacia productos de menor precio', texto: 'Las marcas económicas ganan participación mientras los hogares controlan sus gastos.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una nueva línea de productos supera las expectativas', texto: 'La buena recepción permite aumentar las previsiones comerciales.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El tráfico en tiendas vuelve a crecer', texto: 'Una mayor afluencia mejora las oportunidades de venta durante la temporada.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El comercio electrónico alcanza nuevos máximos', texto: 'La creciente preferencia por compras digitales impulsa las ventas online.' },
+    { sector: 'Consumo', tipo: 'negativo', titulo: 'Los costos logísticos reducen los márgenes', texto: 'El aumento del transporte y almacenamiento afecta la rentabilidad.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una cadena amplía su presencia regional', texto: 'Nuevas tiendas permiten acceder a mercados donde todavía existe espacio para crecer.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Las promociones aumentan el volumen de ventas', texto: 'La estrategia logra atraer compradores, aunque con presión sobre los márgenes.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La demanda de productos premium se mantiene firme', texto: 'Los consumidores de mayor poder adquisitivo continúan sosteniendo el segmento.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una marca mejora su fidelización de clientes', texto: 'Nuevos programas de beneficios aumentan la frecuencia de compra.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El inventario acumulado comienza a disminuir', texto: 'Una mejor rotación permite reducir descuentos y recuperar rentabilidad.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Las ventas online compensan la debilidad de las tiendas físicas', texto: 'El crecimiento digital permite mantener una evolución estable.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una nueva campaña comercial supera los objetivos', texto: 'La respuesta de los consumidores mejora las previsiones del trimestre.' },
+    { sector: 'Consumo', tipo: 'negativo', titulo: 'Los hogares muestran mayor cautela en compras grandes', texto: 'Electrodomésticos y productos de alto valor enfrentan decisiones más prolongadas.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una cadena renegocia contratos con proveedores', texto: 'Las nuevas condiciones ayudan a contener parte de la presión sobre costos.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La compañía mejora su margen mediante productos propios', texto: 'Las marcas internas permiten aumentar la rentabilidad por venta.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La demanda estacional comienza antes de lo esperado', texto: 'Las ventas anticipadas mejoran la actividad comercial.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una estrategia de precios agresiva gana clientes', texto: 'La empresa aumenta participación aunque sacrifica parte del margen.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Los consumidores regresan a las tiendas físicas', texto: 'Una mayor actividad presencial favorece especialmente las ubicaciones comerciales más atractivas.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El negocio de alimentos muestra estabilidad', texto: 'La demanda se mantiene firme incluso mientras otras categorías pierden dinamismo.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La empresa reduce espacios poco rentables', texto: 'El cierre de tiendas con bajo desempeño permite concentrar recursos en ubicaciones estratégicas.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La cadena aumenta sus ventas por cliente', texto: 'Nuevas categorías y servicios elevan el valor promedio de las compras.' },
+    { sector: 'Consumo', tipo: 'negativo', titulo: 'La inflación modifica los hábitos de consumo', texto: 'Los consumidores comparan más precios y cambian hacia alternativas económicas.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La expansión regional comienza a dar resultados', texto: 'Las nuevas tiendas alcanzan rápidamente niveles de ventas superiores a los previstos.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una nueva plataforma de comercio electrónico atrae usuarios', texto: 'El crecimiento de visitas aumenta las posibilidades de monetización.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La compañía mejora sus tiempos de entrega', texto: 'Una logística más eficiente aumenta la satisfacción y reduce cancelaciones.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'La demanda de productos tecnológicos continúa firme', texto: 'Nuevos lanzamientos sostienen el interés de los consumidores.' },
+    { sector: 'Consumo', tipo: 'negativo', titulo: 'El mercado de consumo se vuelve más selectivo', texto: 'Los compradores priorizan precio, calidad y promociones antes de decidir.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Una cadena fortalece su negocio de distribución', texto: 'La expansión logística permite atender más pedidos sin depender de terceros.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'Las ventas superan las expectativas del mercado', texto: 'El desempeño comercial muestra una resistencia mayor a la prevista.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'El volumen de mercancías vuelve a crecer', texto: 'Una mayor actividad comercial impulsa la demanda de transporte.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La empresa amplía su flota de distribución', texto: 'La inversión busca reducir tiempos de entrega y atender nuevos contratos.' },
+    { sector: 'Logistica', tipo: 'negativo', titulo: 'Los costos de combustible presionan los resultados', texto: 'El aumento del gasto operativo obliga a revisar tarifas.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Un nuevo centro logístico reduce los tiempos de entrega', texto: 'La ubicación estratégica permite mejorar la eficiencia de la red.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Los contratos empresariales aumentan', texto: 'Nuevos clientes fortalecen la cartera de servicios de transporte.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La demanda de almacenamiento alcanza niveles elevados', texto: 'Empresas buscan mayor capacidad para sostener sus inventarios.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Una mejora tecnológica optimiza las rutas', texto: 'El uso de datos permite reducir kilómetros recorridos y tiempos muertos.' },
+    { sector: 'Logistica', tipo: 'negativo', titulo: 'La congestión portuaria genera retrasos', texto: 'Los tiempos de entrega aumentan y afectan a compañías dependientes de importaciones.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La empresa incorpora vehículos de reparto más eficientes', texto: 'La renovación de flota busca reducir costos operativos.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'El comercio electrónico impulsa la última milla', texto: 'El crecimiento de pedidos aumenta la demanda de servicios de entrega urbana.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Un contrato internacional abre una nueva ruta comercial', texto: 'La compañía amplía su cobertura y diversifica sus fuentes de ingresos.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Los costos de mantenimiento disminuyen', texto: 'Una renovación de vehículos mejora la eficiencia de la flota.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La empresa aumenta su capacidad de almacenamiento', texto: 'La expansión responde al crecimiento de clientes industriales.' },
+    { sector: 'Logistica', tipo: 'negativo', titulo: 'El transporte de carga pierde dinamismo', texto: 'Menores volúmenes comerciales reducen la utilización de la flota.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La automatización mejora la operación de bodegas', texto: 'Nuevos sistemas permiten procesar más mercancía con menos tiempos de espera.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'Una nueva terminal mejora la conectividad regional', texto: 'La infraestructura facilita el movimiento de mercancías.' },
+    { sector: 'Logistica', tipo: 'negativo', titulo: 'Los retrasos de proveedores afectan la cadena logística', texto: 'La empresa enfrenta mayores tiempos de espera para completar pedidos.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La compañía consigue un importante contrato de distribución', texto: 'El acuerdo garantiza nuevos volúmenes durante los próximos periodos.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La demanda de almacenamiento en frío aumenta', texto: 'El crecimiento de alimentos y productos especializados impulsa nuevas inversiones.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La empresa optimiza su red de centros de distribución', texto: 'El rediseño permite acercar inventarios a las principales zonas de consumo.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'El aumento del comercio regional favorece al transporte', texto: 'Nuevos flujos de mercancías incrementan la utilización de las rutas.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La compañía reduce kilómetros improductivos', texto: 'Una mejor planificación mejora la rentabilidad de cada vehículo.' },
+    { sector: 'Logistica', tipo: 'negativo', titulo: 'El sector enfrenta mayores costos laborales', texto: 'El aumento de gastos obliga a revisar contratos y eficiencia operativa.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La expansión del comercio digital cambia las prioridades logísticas', texto: 'La velocidad de entrega se convierte en un factor cada vez más importante.' },
+    { sector: 'Logistica', tipo: 'positivo', titulo: 'La empresa prepara una expansión de capacidad', texto: 'El aumento de pedidos anticipa una mayor utilización de su infraestructura.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Una mejor cosecha eleva las previsiones de ingresos', texto: 'Las condiciones productivas favorecen el volumen disponible para comercialización.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'Los costos de fertilizantes vuelven a aumentar', texto: 'El incremento presiona los márgenes de productores y procesadores.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La demanda internacional impulsa las exportaciones', texto: 'Nuevos pedidos mejoran las perspectivas del sector agrícola.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Una temporada favorable mejora la producción', texto: 'El clima permite obtener mayores rendimientos por hectárea.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'Las lluvias afectan parte de la producción', texto: 'Algunas zonas enfrentan retrasos que podrían reducir el volumen comercializable.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Una empresa amplía su capacidad de procesamiento', texto: 'La inversión busca capturar mayor valor antes de vender la producción.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'Los precios agrícolas muestran mayor volatilidad', texto: 'Cambios en oferta y demanda dificultan las previsiones para productores.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La demanda de alimentos procesados continúa creciendo', texto: 'Los consumidores favorecen productos prácticos y de mayor valor agregado.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Una nueva alianza abre mercados internacionales', texto: 'El acuerdo permite llevar productos agrícolas a nuevos destinos.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La empresa invierte en tecnología agrícola', texto: 'Nuevas herramientas buscan mejorar productividad y reducir desperdicios.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'El costo del transporte afecta los precios finales', texto: 'Mayores gastos logísticos reducen parte del margen del productor.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Una cosecha superior a la prevista mejora el flujo de caja', texto: 'El mayor volumen permite aumentar las ventas durante el período.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'La producción enfrenta condiciones climáticas adversas', texto: 'Los agricultores revisan sus previsiones ante posibles pérdidas de rendimiento.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'El mercado de alimentos muestra una demanda estable', texto: 'El consumo básico mantiene cierta resistencia frente a cambios económicos.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La empresa amplía su red de proveedores', texto: 'Diversificar fuentes de suministro reduce la dependencia de una sola región.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Nuevas inversiones modernizan la cadena agrícola', texto: 'La automatización permite mejorar almacenamiento y procesamiento.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'Los precios de materias primas favorecen al productor', texto: 'Un mercado más firme mejora los ingresos potenciales.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La empresa aumenta sus exportaciones', texto: 'La apertura de nuevos clientes internacionales fortalece las perspectivas comerciales.' },
+    { sector: 'Agricultura', tipo: 'negativo', titulo: 'Los costos de producción obligan a revisar precios', texto: 'Productores trasladan parte de la presión a consumidores y distribuidores.' },
+    { sector: 'Agricultura', tipo: 'positivo', titulo: 'La demanda por productos sostenibles continúa creciendo', texto: 'Nuevas preferencias de consumidores generan oportunidades para productores diferenciados.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'El consumo de datos continúa creciendo', texto: 'El aumento del tráfico móvil impulsa la demanda de infraestructura de red.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'La compañía amplía su cobertura 5G', texto: 'La inversión mejora la capacidad de atender zonas con alta demanda.' },
+    { sector: 'Telecomunicaciones', tipo: 'negativo', titulo: 'Los costos de infraestructura presionan las cuentas', texto: 'La expansión de red requiere inversiones importantes antes de recuperar el capital.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'Un nuevo plan comercial atrae clientes', texto: 'La compañía gana usuarios gracias a una combinación de precio y servicios adicionales.' },
+    { sector: 'Telecomunicaciones', tipo: 'negativo', titulo: 'La competencia reduce las tarifas móviles', texto: 'Los operadores buscan aumentar participación, presionando los ingresos por cliente.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'El negocio empresarial gana importancia', texto: 'Nuevos contratos de conectividad aumentan los ingresos recurrentes.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'La compañía mejora la calidad de su red', texto: 'Menores interrupciones elevan la satisfacción de los usuarios.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'El crecimiento de fibra óptica supera las previsiones', texto: 'La demanda de conexiones rápidas impulsa nuevas instalaciones.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'La empresa aumenta la inversión en centros de datos', texto: 'El crecimiento digital requiere mayor capacidad de procesamiento y almacenamiento.' },
+    { sector: 'Telecomunicaciones', tipo: 'negativo', titulo: 'La pérdida de clientes se desacelera', texto: 'Nuevos servicios ayudan a mejorar la retención.' },
+    { sector: 'Telecomunicaciones', tipo: 'negativo', titulo: 'Un fallo de red genera presión reputacional', texto: 'La interrupción obliga a acelerar inversiones en infraestructura.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'Los servicios digitales aumentan el ingreso por usuario', texto: 'Nuevos productos complementarios permiten monetizar mejor la base existente.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'La expansión rural abre un nuevo mercado', texto: 'La llegada de conectividad a zonas con menor cobertura aumenta el potencial de crecimiento.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'El mercado empresarial demanda conexiones más robustas', texto: 'Empresas aumentan el gasto en servicios de conectividad y seguridad.' },
+    { sector: 'Telecomunicaciones', tipo: 'positivo', titulo: 'La compañía acelera la modernización de su red', texto: 'El plan busca reducir costos de mantenimiento y aumentar capacidad.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La demanda de automatización industrial aumenta', texto: 'Las empresas buscan reducir tiempos de producción y mejorar el uso de recursos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Un nuevo sistema robótico entra en fase comercial', texto: 'Los primeros contratos podrían convertir el proyecto tecnológico en una fuente relevante de ingresos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La inversión en inteligencia artificial alcanza nuevos niveles', texto: 'Las compañías aceleran proyectos para automatizar procesos y analizar grandes volúmenes de información.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Una empresa de robótica consigue su primer gran contrato industrial', texto: 'El acuerdo valida la tecnología y abre posibilidades de expansión.' },
+    { sector: 'IA', tipo: 'negativo', titulo: 'El desarrollo tecnológico enfrenta mayores costos', texto: 'La necesidad de especialistas e infraestructura aumenta el capital requerido.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Una plataforma de IA mejora la productividad empresarial', texto: 'Los primeros resultados muestran reducción de tiempos en procesos administrativos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La demanda de sensores inteligentes aumenta', texto: 'La expansión de fábricas automatizadas impulsa pedidos de componentes especializados.' },
+    { sector: 'Biotecnologia', tipo: 'positivo', titulo: 'Un proyecto biotecnológico avanza a una nueva etapa', texto: 'Los resultados obtenidos permiten continuar el desarrollo y reducen parte de la incertidumbre.' },
+    { sector: 'Biotecnologia', tipo: 'positivo', titulo: 'La empresa amplía su inversión en investigación', texto: 'El aumento del gasto busca acelerar productos que todavía se encuentran en desarrollo.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Una nueva tecnología reduce costos de fabricación', texto: 'La innovación permite producir a mayor escala con menor consumo de recursos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La automatización comienza a transformar las fábricas', texto: 'Nuevos sistemas permiten mejorar productividad sin ampliar proporcionalmente la infraestructura.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La compañía firma una alianza para desarrollar IA', texto: 'El acuerdo combina tecnología, datos e infraestructura para acelerar nuevos productos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Los primeros clientes superan las previsiones', texto: 'La adopción inicial de la plataforma mejora las expectativas comerciales.' },
+    { sector: 'IA', tipo: 'negativo', titulo: 'El mercado exige resultados concretos de la inversión tecnológica', texto: 'Los inversores comienzan a prestar más atención a ingresos y márgenes que al crecimiento de usuarios.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Una nueva generación de robots reduce tiempos de producción', texto: 'Las primeras pruebas muestran mejoras en eficiencia operativa.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La demanda de soluciones de análisis de datos aumenta', texto: 'Empresas buscan convertir grandes volúmenes de información en decisiones operativas.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La compañía consigue financiación para ampliar su investigación', texto: 'El nuevo capital permitirá acelerar proyectos estratégicos.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'Una innovación reduce el consumo energético de los equipos', texto: 'El avance podría mejorar tanto costos como competitividad.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La empresa amplía su red de socios tecnológicos', texto: 'Nuevas colaboraciones permiten acelerar desarrollo sin asumir todos los costos internamente.' },
+    { sector: 'IA', tipo: 'positivo', titulo: 'La industria comienza a adoptar soluciones autónomas', texto: 'La automatización pasa de proyectos piloto a implementaciones comerciales.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los inversores reducen el riesgo ante nuevas señales económicas', texto: 'La incertidumbre lleva al mercado a favorecer compañías con balances más sólidos.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El consumo muestra una recuperación inesperada', texto: 'Una mayor actividad de los hogares mejora las perspectivas de empresas orientadas al mercado interno.' },
+    { sector: 'Tecnologia', tipo: 'positivo', titulo: 'Las empresas aumentan sus planes de inversión', texto: 'La mejora de expectativas lleva a compañías a adelantar proyectos que habían sido aplazados.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La volatilidad vuelve a los mercados', texto: 'Los inversores reaccionan rápidamente ante cambios en tasas, inflación y perspectivas de crecimiento.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El mercado cambia su preferencia hacia empresas defensivas', texto: 'La incertidumbre favorece sectores con ingresos más estables.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Las expectativas de crecimiento mejoran', texto: 'Nuevos indicadores económicos reducen los temores de una desaceleración más profunda.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La inflación vuelve a ocupar el centro de atención', texto: 'Un aumento de costos obliga a los inversores a revisar sus previsiones de rentabilidad.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'El mercado espera señales más claras antes de aumentar posiciones', texto: 'La falta de visibilidad mantiene elevada la cautela.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Las empresas con mayor liquidez ganan atractivo', texto: 'Los inversores priorizan compañías capaces de financiar operaciones sin depender demasiado del crédito.' },
+    { sector: 'Consumo', tipo: 'positivo', titulo: 'El sector empresarial aumenta sus contrataciones', texto: 'Una mejora de actividad comienza a trasladarse al mercado laboral.' },
+    { sector: 'Finanzas', tipo: 'negativo', titulo: 'La incertidumbre internacional afecta las decisiones de inversión', texto: 'Algunas empresas retrasan proyectos mientras esperan mayor claridad.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los mercados reaccionan favorablemente a nuevos datos económicos', texto: 'La mejora de indicadores aumenta las expectativas sobre la actividad empresarial.' },
+    { sector: 'Energia', tipo: 'negativo', titulo: 'Las materias primas vuelven a mostrar fuertes movimientos', texto: 'Los cambios de oferta y demanda generan oportunidades y riesgos para distintos sectores.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Las empresas exportadoras reciben un impulso', texto: 'Un entorno cambiario favorable mejora la competitividad de algunos negocios internacionales.' },
+    { sector: 'Construccion', tipo: 'positivo', titulo: 'El mercado inmobiliario y automotor toman caminos diferentes', texto: 'Mientras la compra de vehículos gana dinamismo, algunos segmentos de vivienda mantienen una recuperación más lenta.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los inversores buscan oportunidades en activos reales', texto: 'La incertidumbre sobre inflación aumenta el interés por sectores vinculados a infraestructura, materias primas e inmuebles.' },
+    { sector: 'Tecnologia', tipo: 'negativo', titulo: 'La competencia internacional obliga a las empresas a reajustar estrategias', texto: 'Los fabricantes aceleran inversiones, reducen costos y buscan nuevas alianzas para defender sus márgenes.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Las compañías priorizan crecimiento rentable', texto: 'Después de varios periodos de fuerte inversión, el mercado comienza a exigir una relación más clara entre expansión y generación de beneficios.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'El capital vuelve a buscar proyectos con ingresos previsibles', texto: 'Los activos capaces de generar flujo de caja estable ganan atractivo frente a apuestas más especulativas.' },
+    { sector: 'Finanzas', tipo: 'positivo', titulo: 'Los mercados entran en una etapa marcada por oportunidades y cautela', texto: 'El crecimiento de algunos sectores convive con presión sobre costos, financiación y demanda, obligando a los inversores a diferenciar cada vez más entre empresas.' }
+];
 const NOTICIAS_POS = [
     "anuncia ingresos trimestrales por encima de lo esperado",
     "firma un acuerdo estratégico con un proveedor global",
@@ -2891,6 +3339,154 @@ const NOTICIAS_NEG = [
     "termina el año con beneficios muy inferiores a lo esperado"
 ];
 
+const EVENTOS_EMPRESA = [
+    { tipo: 'positivo', titulo: 'anuncia un producto revolucionario', min: 0.28, max: 0.75, duracion: 90 },
+    { tipo: 'positivo', titulo: 'firma un contrato internacional inesperado', min: 0.2, max: 0.55, duracion: 75 },
+    { tipo: 'positivo', titulo: 'supera ampliamente las previsiones de resultados', min: 0.18, max: 0.48, duracion: 70 },
+    { tipo: 'positivo', titulo: 'recibe una inversión estratégica para expandirse', min: 0.22, max: 0.6, duracion: 85 },
+    { tipo: 'negativo', titulo: 'enfrenta una investigación por irregularidades', min: -0.7, max: -0.3, duracion: 110 },
+    { tipo: 'negativo', titulo: 'retira un producto por fallos técnicos', min: -0.58, max: -0.22, duracion: 90 },
+    { tipo: 'negativo', titulo: 'pierde un contrato clave y reduce sus previsiones', min: -0.48, max: -0.18, duracion: 75 },
+    { tipo: 'negativo', titulo: 'sufre una interrupción grave en sus operaciones', min: -0.62, max: -0.25, duracion: 100 }
+];
+
+function seleccionarEmpresaMercado() {
+    const disponibles = TODAS_EMPRESAS.filter(empresa => !eventosEmpresaActivos[empresa]);
+    return disponibles[Math.floor(Math.random() * disponibles.length)] || null;
+}
+
+function mostrarNoticiaMercado(noticia, impactoVisible) {
+    const cont = document.getElementById('noticiasLista');
+    if (!cont) return;
+    const colorCat = CATEGORIAS[noticia.sector]?.color || '#888';
+    const esPositiva = noticia.tipo === 'positivo';
+    const confianza = noticia.confianza || (noticia.tipo === 'rumor' ? 'Baja' : 'Media');
+    const horizonte = noticia.horizonte || (Math.abs(noticia.impacto || 0) > 0.45 ? 'Corto plazo' : 'Mediano plazo');
+    const contexto = noticia.contexto || (esPositiva
+        ? `El mercado interpreta el anuncio como una mejora de las perspectivas de ${noticia.empresa}.`
+        : `Los inversores aumentan la cautela ante el posible impacto en las operaciones de ${noticia.empresa}.`);
+    const textoDetallado = noticia.texto || contexto;
+    const div = document.createElement('div');
+    div.className = `noticia ${esPositiva ? 'noticia-positiva' : 'noticia-negativa'}`;
+    div.style.animation = 'fadeIn 0.5s';
+    const restante = noticia.terminaEn ? Math.max(0, Math.ceil((noticia.terminaEn - Date.now()) / 1000)) : null;
+    div.innerHTML = `
+        <img class="noticia-logo" src="${getImagenNoticia(noticia.empresa)}" alt="Logo de ${noticia.empresa}" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
+        <div class="noticia-contenido">
+            <div class="noticia-encabezado"><b style="color:${colorCat}">${noticia.empresa}</b><span class="noticia-sector">${noticia.sector}</span></div>
+            <div class="noticia-titulo">${noticia.titulo}</div>
+            <div class="noticia-contexto">${contexto}</div>
+            <div class="noticia-texto">${textoDetallado}</div>
+            <div class="noticia-datos"><span class="impacto ${esPositiva ? 'pos' : 'neg'}">${esPositiva ? '📈 Impacto positivo ' : '📉 Impacto negativo '}${impactoVisible}</span><span class="noticia-meta">${horizonte}</span><span class="noticia-meta">Confianza: ${confianza}</span>${restante !== null ? `<span class="noticia-meta">⏱ ${restante}s</span>` : ''}</div>
+        </div>
+    `;
+    cont.prepend(div);
+    if (cont.children.length > 10) cont.lastChild.remove();
+}
+
+function generarContextoNoticia(sector, positiva, empresa) {
+    const contextos = {
+        Tecnologia: positiva ? 'La demanda de software, chips y plataformas digitales sigue creciendo; el mercado reparte optimismo en torno a ingresos recurrentes y escalabilidad.' : 'La presión competitiva, la innovación rápida y la necesidad de capital siguen generando dudas sobre márgenes y crecimiento sostenido.',
+        Finanzas: positiva ? 'La mejora del crédito, la calidad activa y la disciplina financiera puede impulsar ingresos, margen y confianza de los inversores.' : 'El mercado teme más morosidad, menor actividad crediticia y presión sobre márgenes en un contexto financiero más volátil.',
+        Energia: positiva ? 'La combinación de eficiencia operativa y mayor demanda eléctrica ofrece un marco más favorable para el flujo de caja y la producción.' : 'Los costes energéticos, los retrasos de suministros y la regulación pueden hacer más frágiles los resultados del sector.',
+        Salud: positiva ? 'La aprobación de tratamientos, la demanda de innovación y la expansión de mercados presentan un escenario de crecimiento más sólido.' : 'Los inversores descuentan retrasos regulatorios, costes de investigación y un entorno clínico más exigente.',
+        Consumo: positiva ? 'Una mayor demanda de consumo y mejor retención de clientes suele traducirse en mayor volumen de ventas y mejor rentabilidad.' : 'La caída del consumo, la presión de precios y la competencia pueden mermar márgenes y forecast de ventas.',
+        Criptomonedas: positiva ? 'La noticia aumenta el interés especulativo y mejora la percepción del riesgo, lo que puede elevar el volumen de operaciones y la confianza.' : 'La incertidumbre regulatoria y la volatilidad del activo elevan la cautela y favorecen ventas de pánico.',
+        Construccion: positiva ? 'Más contratos, mejor actividad y menor fricción en licitaciones pueden reforzar la cartera y la producción del negocio.' : 'El crédito más caro, los retrasos en materiales y la inestabilidad del proyecto disminuyen la rentabilidad esperada.',
+        Agricultura: positiva ? 'La mejora de cosechas, precios y exportaciones favorece la previsión de ingresos del negocio y su eficiencia operativa.' : 'El clima, los insumos y la presión comercial pueden limitar producción, margen y margen de seguridad.',
+        default: positiva ? `El mercado interpreta el anuncio como una mejora de las perspectivas de ${empresa}.` : `Los inversores aumentan la cautela ante el posible impacto en las operaciones de ${empresa}.`
+    };
+    return contextos[sector] || contextos.default;
+}
+
+function construirTextoNoticia(empresa, sector, tipo, impacto, descripcionBase) {
+    const impactoPct = `${impacto >= 0 ? '+' : ''}${(impacto * 100).toFixed(1)}%`;
+    const sectorHints = {
+        Finanzas: 'calidad crediticia, solvencia y flujo de caja',
+        Tecnologia: 'márgenes, demanda digital y ejecución comercial',
+        Energia: 'costes operativos, suministro y capacidad de producción',
+        Salud: 'aprobaciones, innovación y demanda clínica',
+        Consumo: 'ventas, retención y presión competitiva',
+        Criptomonedas: 'volatilidad, liquidez y sentimiento especulativo',
+        Construccion: 'licitaciones, materiales y cartera de proyectos',
+        Agricultura: 'cosechas, costos y exportaciones',
+        default: 'perspectivas de negocio y ejecución operativa'
+    };
+    const foco = sectorHints[sector] || sectorHints.default;
+    const variantesPositivas = [
+        `La reacción de ${empresa} en ${sector} refleja una mejora clara en el ánimo del mercado. El anuncio ha reforzado la confianza en ${foco}, y los operadores ajustan sus modelos hacia un escenario más optimista. Con un impacto estimado de ${impactoPct}, la operación no solo mejora la percepción del valor, sino que también eleva la probabilidad de que la compañía consolide crecimiento, margen y cuota de mercado en los próximos tramos del ciclo.`,
+        `En ${sector}, ${empresa} vuelve a captar atención por una señal que mejora la narrativa del negocio. La noticia pesa positivamente porque toca variables clave como ${foco}, algo que suele traducirse en más demanda, mejor precio objetivo y mayor interés de inversores. El impacto estimado de ${impactoPct} sugiere que el mercado está asumiendo una mejora real en la calidad del negocio y no solo un movimiento de reacción corta.`,
+        `${empresa} ha generado una reacción más sólida de lo habitual dentro de ${sector}. El mensaje no parece ser solo de corto plazo: al reforzar ${foco}, la noticia cambia la forma en que analistas e inversores valoran las perspectivas de la empresa. Con un efecto estimado de ${impactoPct}, el mercado empieza a descontar ingresos más estables, mejor eficiencia y una trayectoria más clara de crecimiento. `
+    ];
+    const variantesNegativas = [
+        `La noticia de ${empresa} ha pesado en el sector de ${sector} y la cautela ha ganado terreno entre los inversores. El impacto estimado de ${impactoPct} pone foco en ${foco}, una combinación que suele aumentar la presión sobre márgenes, liquidez y percepción de riesgo. Aunque no todo el movimiento es definitivo, la reacción del mercado refleja una revisión más prudente de las perspectivas del negocio.`,
+        `En ${sector}, ${empresa} ha quedado bajo mayor presión tras esta información. La señal afecta directamente a ${foco}, y los operadores responden con expectativas más bajas sobre crecimiento y rentabilidad. Con un impacto de ${impactoPct}, la reacción del mercado sugiere que la confianza se ha debilitado y que la compañía tendrá que demostrar ejecución y disciplina para recuperar terreno.`,
+        `${empresa} enfrenta una reacción más dura de lo previsto dentro de ${sector}. El mensaje enfoca la atención en ${foco}, y ese tipo de variables suele traducirse en caída de interés, restricción de valoraciones y mayor sensibilidad ante nuevas sorpresas. El efecto estimado de ${impactoPct} deja claro que el mercado está repricing a la empresa con un criterio más defensivo y menos optimista. `
+    ];
+    const pool = tipo === 'positivo' ? variantesPositivas : variantesNegativas;
+    return (pool[Math.floor(Math.random() * pool.length)] + ` ${descripcionBase || `La evolución de ${empresa} sigue siendo clave para el sentimiento del mercado.`}`).trim();
+}
+
+function crearEventoEmpresa(empresa, plantilla, tituloPersonalizado) {
+    const meta = empresaMeta[empresa];
+    if (!meta || eventosEmpresaActivos[empresa]) return false;
+    const impacto = Number(plantilla.min || 0) + Math.random() * (Number(plantilla.max || 0) - Number(plantilla.min || 0));
+    eventosEmpresaActivos[empresa] = { tipo: plantilla.tipo, empresa, impacto, restante: plantilla.duracion, duracion: plantilla.duracion, creadoEn: Date.now() };
+    meta.impulsoEvento = impacto / Math.max(1, plantilla.duracion);
+    const esPositiva = plantilla.tipo === 'positivo';
+    const descripcionBase = generarContextoNoticia(meta.sector, esPositiva, empresa);
+    const noticia = {
+        empresa,
+        sector: meta.sector,
+        tipo: plantilla.tipo,
+        titulo: tituloPersonalizado || plantilla.titulo,
+        contexto: descripcionBase,
+        texto: construirTextoNoticia(empresa, meta.sector, plantilla.tipo, impacto, descripcionBase),
+        confianza: 'Alta',
+        horizonte: plantilla.duracion >= 90 ? 'Mediano plazo' : 'Corto plazo',
+        impacto,
+        creadaEn: Date.now(),
+        terminaEn: Date.now() + plantilla.duracion * 1000
+    };
+    noticiasHistorial.unshift(noticia);
+    if (noticiasHistorial.length > 40) noticiasHistorial.pop();
+    mostrarNoticiaMercado(noticia, `${impacto >= 0 ? '+' : ''}${(impacto * 100).toFixed(1)}%`);
+    toast(`${plantilla.tipo === 'positivo' ? '📈' : '📉'} ${empresa}: ${noticia.titulo}`, plantilla.tipo === 'positivo' ? 'success' : 'error');
+    return true;
+}
+
+function actualizarMercadoGlobal() {
+    const variacion = (Math.random() - 0.5) * 0.0007;
+    mercadoGlobal.fuerza = Math.max(-0.0012, Math.min(0.0012, (mercadoGlobal.fuerza || 0) * 0.75 + variacion));
+    mercadoGlobal.estado = mercadoGlobal.fuerza > 0.00025 ? 'alcista' : mercadoGlobal.fuerza < -0.00025 ? 'bajista' : 'estable';
+    mercadoGlobal.restante = 30;
+}
+
+setInterval(() => {
+    if (!usuarioActual || estaEnPreferencias()) return;
+    actualizarMercadoGlobal();
+}, 30000);
+
+setInterval(() => {
+    if (!usuarioActual || estaEnPreferencias()) return;
+    Object.entries(eventosEmpresaActivos).forEach(([empresa, evento]) => {
+        evento.restante -= 1;
+        if (evento.restante <= 0) {
+            const meta = empresaMeta[empresa];
+            if (meta) {
+                meta.impulsoEvento = 0;
+                meta.recuperacion = -(evento.impacto * 0.2) / 45;
+            }
+            delete eventosEmpresaActivos[empresa];
+        }
+    });
+    if (Math.random() < 0.055 && Object.keys(eventosEmpresaActivos).length < 2) {
+        const empresa = seleccionarEmpresaMercado();
+        const plantilla = EVENTOS_EMPRESA[Math.floor(Math.random() * EVENTOS_EMPRESA.length)];
+        if (empresa && plantilla) crearEventoEmpresa(empresa, plantilla);
+    }
+}, 1000);
+
 // Mapeo de emoji por sector (restaurado desde respaldo)
 const sectorEmoji = {
     "Tecnologia": "💻", "Finanzas": "🏦", "Energia": "⚡", "Salud": "🏥", "Consumo": "🛍️",
@@ -2902,39 +3498,904 @@ const sectorEmoji = {
     "Biotecnologia": "🧬", "Fintech": "💳"
 };
 
+function generarTituloNoticia(empresa, sector, positiva) {
+    const frasesPositivas = [
+        `amplia su ventaja competitiva`,
+        `refuerza su posición en ${sector}`,
+        `logra un avance operativo clave`,
+        `supera la cautela del mercado`,
+        `suma impulso en su estrategia de crecimiento`
+    ];
+    const frasesNegativas = [
+        `encuentra presión por la incertidumbre`,
+        `ve cuestionada su estrategia en ${sector}`,
+        `sufre un golpe operativo relevante`,
+        `pierde confianza frente a sus rivales`,
+        `recibe una señal más dura del mercado`
+    ];
+    const base = positiva ? frasesPositivas : frasesNegativas;
+    return `${empresa} ${base[Math.floor(Math.random() * base.length)]}`;
+}
+
 function generarNoticia() {
     let cats = Object.keys(CATEGORIAS);
     let cat = cats[Math.floor(Math.random() * cats.length)];
     let empObj = CATEGORIAS[cat].empresas[Math.floor(Math.random() * CATEGORIAS[cat].empresas.length)];
     let emp = empObj.n;
-    let positiva = Math.random() > 0.45;
-    let titulo = positiva ? NOTICIAS_POS[Math.floor(Math.random()*NOTICIAS_POS.length)] : NOTICIAS_NEG[Math.floor(Math.random()*NOTICIAS_NEG.length)];
-    let impactoPct = positiva ? (0.08 + Math.random()*0.12) : -(0.08 + Math.random()*0.12);
-    preciosMercado[emp] *= (1 + impactoPct);
-    if (preciosMercado[emp] < 0.00001) preciosMercado[emp] = 0.00001;
-    let boostKey = "news_" + cat;
-    sectorBoost[boostKey] = positiva ? 1.08 : 0.92;
-    setTimeout(() => { if (sectorBoost[boostKey]) sectorBoost[boostKey] = 1.0; }, 8000);
 
-    let colorCat = CATEGORIAS[cat]?.color || "#888";
-    let imagen = getImagenNoticia(emp);
+    let noticiaObj = null;
+    const noticiaEspecifica = NOTICIAS_POR_EMPRESA[emp] ? obtenerNoticiaEmpresaAleatoria(emp, cat) : null;
 
-    let div = document.createElement("div");
-    div.className = "noticia";
-    div.style.animation = "fadeIn 0.5s";
-    div.innerHTML = `
-        <img class="noticia-logo" src="${imagen}" data-empresa-logo="${emp}" alt="Logo de ${emp}" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
-        <div>
-            <b style="color:${colorCat}">${emp}</b> ${titulo}<br>
-            <span class="impacto ${positiva?'pos':'neg'}">${positiva ? '📈 Impacto Positivo +' + Math.abs(impactoPct*100).toFixed(1) + '%' : '📉 Impacto Negativo ' + impactoPct.toFixed(1) + '%'}</span>
-            <span style="color:#555;font-size:0.75em;margin-left:8px;">${cat}</span>
-        </div>`;
-    let cont = document.getElementById("noticiasLista");
-    if (cont) {
-        cont.prepend(div);
-        if (cont.children.length > 10) cont.lastChild.remove();
+    if (noticiaEspecifica && Math.random() < 0.75) {
+        noticiaObj = noticiaEspecifica;
+        const boostKey = "news_" + cat;
+        sectorBoost[boostKey] = noticiaObj.tipo === 'positivo' ? 1.12 : 0.88;
+        setTimeout(() => { if (sectorBoost[boostKey]) sectorBoost[boostKey] = 1.0; }, 8000);
+
+        const meta = empresaMeta[emp];
+        if (meta) {
+            meta.historial.push(noticiaObj.impacto * 0.5);
+            if (meta.historial.length > 30) meta.historial.shift();
+        }
+    } else {
+        const usoPredefinida = Math.random() < 0.68 && NOTICIAS_PREDEFINIDAS.length > 0;
+
+        if (usoPredefinida) {
+            const base = NOTICIAS_PREDEFINIDAS[Math.floor(Math.random() * NOTICIAS_PREDEFINIDAS.length)];
+            const positiva = base.tipo === 'positivo';
+            const impactoPct = positiva ? (0.07 + Math.random() * 0.15) : -(0.07 + Math.random() * 0.13);
+            const sector = base.sector || cat;
+            const titulo = base.titulo;
+            const descripcionBase = generarContextoNoticia(sector, positiva, emp);
+            const textoCompleto = `${base.texto} ${descripcionBase}`;
+
+            noticiaObj = {
+                empresa: emp,
+                sector,
+                tipo: positiva ? 'positivo' : 'negativo',
+                titulo,
+                contexto: descripcionBase,
+                texto: textoCompleto,
+                confianza: positiva ? 'Alta' : 'Media',
+                horizonte: Math.abs(impactoPct) > 0.12 ? 'Corto plazo' : 'Mediano plazo',
+                impacto: impactoPct,
+                creadaEn: Date.now(),
+                terminaEn: Date.now() + 18000
+            };
+
+            const boostKey = "news_" + sector;
+            sectorBoost[boostKey] = positiva ? 1.12 : 0.88;
+            setTimeout(() => { if (sectorBoost[boostKey]) sectorBoost[boostKey] = 1.0; }, 8000);
+
+            const meta = empresaMeta[emp];
+            if (meta) {
+                meta.historial.push(impactoPct * 0.5);
+                if (meta.historial.length > 30) meta.historial.shift();
+            }
+        } else {
+            let positiva = Math.random() > 0.45;
+            let titulo = generarTituloNoticia(emp, cat, positiva);
+            let impactoPct = positiva ? (0.08 + Math.random()*0.14) : -(0.08 + Math.random()*0.14);
+            let boostKey = "news_" + cat;
+            sectorBoost[boostKey] = positiva ? 1.12 : 0.88;
+            setTimeout(() => { if (sectorBoost[boostKey]) sectorBoost[boostKey] = 1.0; }, 8000);
+
+            const meta = empresaMeta[emp];
+            const descripcionBase = generarContextoNoticia(cat, positiva, emp);
+            const textoCompleto = construirTextoNoticia(emp, cat, positiva ? 'positivo' : 'negativo', impactoPct, descripcionBase);
+            noticiaObj = {
+                empresa: emp,
+                sector: cat,
+                tipo: positiva ? 'positivo' : 'negativo',
+                titulo,
+                contexto: descripcionBase,
+                texto: textoCompleto,
+                confianza: positiva ? 'Alta' : 'Media',
+                horizonte: Math.abs(impactoPct) > 0.12 ? 'Corto plazo' : 'Mediano plazo',
+                impacto: impactoPct,
+                creadaEn: Date.now(),
+                terminaEn: Date.now() + 18000
+            };
+
+            if (meta) {
+                meta.historial.push(impactoPct * 0.5);
+                if (meta.historial.length > 30) meta.historial.shift();
+            }
+        }
     }
+
+    noticiasHistorial.unshift(noticiaObj);
+    if (noticiasHistorial.length > 40) noticiasHistorial.pop();
+    mostrarNoticiaMercado(noticiaObj, `${noticiaObj.impacto >= 0 ? '+' : ''}${(noticiaObj.impacto * 100).toFixed(1)}%`);
+    toast(`${noticiaObj.tipo === 'positivo' ? '📈' : '📉'} ${emp}: ${noticiaObj.titulo}`, noticiaObj.tipo === 'positivo' ? 'success' : 'error');
 }
+
+const NOTICIAS_EMPRESA_FINANZAS = {
+    "Visa": {
+        positivo: [
+            'Visa firmó un acuerdo con bancos africanos para llevar pagos sin contacto a zonas rurales, proyectando 40 millones de nuevos usuarios en tres años.',
+            'Su volumen de transacciones transfronterizas creció por encima de lo esperado durante la temporada alta de viajes.',
+            'Lanzó un piloto de identidad digital que verifica pagos sin exponer datos bancarios, elogiado por expertos en ciberseguridad.',
+            'Un estudio la ubicó como la marca de pagos más confiable entre consumidores jóvenes de América Latina.',
+            'Se asoció con una fintech de remesas para abaratar los envíos de dinero entre EE.UU. y Centroamérica.',
+            'Adquirió una startup de prevención de fraude basada en IA, reforzando su infraestructura de seguridad.',
+            'El directorio aprobó un aumento del dividendo trimestral citando flujo de caja sólido.',
+            'Alcanzó neutralidad de carbono en sus centros de datos dos años antes de lo previsto.',
+            'Abrió un centro de innovación en Singapur enfocado en pagos para pequeñas empresas asiáticas.',
+            'Su tecnología de tokenización redujo en un tercio el fraude reportado por comercios asociados.'
+        ],
+        negativo: [
+            'Un regulador europeo abrió una investigación por comisiones excesivas cobradas a pequeños comercios.',
+            'Enfrenta una demanda colectiva de comerciantes que alegan prácticas anticompetitivas en tarifas de intercambio.',
+            'Una falla técnica dejó sin servicio a miles de comercios durante horas en fecha de alto consumo.',
+            'Fue criticada por un aumento poco transparente en comisiones internacionales.',
+            'Legisladores en Washington propusieron limitar el poder de mercado de las redes de tarjetas dominantes.',
+            'Recibió una multa europea por incumplir plazos de adaptación a normas de protección de datos.',
+            'Un informe señaló que sus comisiones afectan más a pequeños comercios que a grandes cadenas.',
+            'Fue mencionada en una investigación por presunta colusión de tarifas con otra red de pagos.',
+            'Un apagón regional afectó pagos con tarjeta en varias ciudades, generando quejas masivas.',
+            'Un fallo judicial preliminar avanzó una demanda que la acusa de frenar a competidores pequeños.'
+        ]
+    },
+    "Mastercard": {
+        positivo: [
+            'Lanzó pagos instantáneos para trabajadores independientes en cinco países latinoamericanos.',
+            'Su segmento de datos y ciberseguridad se convirtió en fuente relevante de ingresos.',
+            'Se asoció con microfinancieras africanas para emitir tarjetas prepago a personas sin cuenta bancaria.',
+            'Fue pionera en pago biométrico por huella dactilar en puntos de venta.',
+            'Lanzó un programa de mentoría tecnológica para emprendedoras en mercados emergentes.',
+            'Certificó una nueva capa de seguridad que reduce el fraude sin tarjeta presente.',
+            'El directorio aprobó un incremento de dividendo tras resultados sólidos.',
+            'Firmó con gobiernos locales la digitalización del pago de transporte público.',
+            'Redució su huella de carbono corporativa a la mitad antes de la meta fijada.',
+            'Amplió su colaboración con fintechs de remesas, bajando comisiones para migrantes.'
+        ],
+        negativo: [
+            'Un tribunal europeo confirmó una multa histórica por comisiones de intercambio excesivas.',
+            'Enfrenta una demanda colectiva británica por sobrecostos acumulados en transacciones.',
+            'Una falla técnica global interrumpió pagos en varios países durante horas pico.',
+            'Fue criticada por procesar pagos vinculados a apuestas no reguladas.',
+            'Un informe reveló cobros poco transparentes a comercios en África Occidental.',
+            'Legisladores cuestionaron su posición dominante junto a otra red de pagos.',
+            'Fue mencionada en una investigación antimonopolio por presunta fijación de tarifas.',
+            'Hackers afirmaron haber vulnerado brevemente un proveedor externo asociado.',
+            'Enfrentó protestas de comerciantes sudafricanos por el costo de nuevas terminales.',
+            'Retrasó meses una actualización de seguridad tras detectarse vulnerabilidades menores.'
+        ]
+    },
+    "PayPal": {
+        positivo: [
+            'Relanzó su app con funciones de ahorro integradas, elevando usuarios activos.',
+            'Se alió con comercios de moda independiente para pagos diferidos sin intereses.',
+            'Lanzó facturación gratuita para freelancers que cobran a clientes internacionales.',
+            'Fue el método de pago digital preferido entre compradores mayores de 40 años, según un estudio.',
+            'Amplió su servicio cripto con transferencias directas entre usuarios sin comisión.',
+            'Redució notablemente los tiempos de resolución de disputas con un sistema automatizado.',
+            'Lanzó microcréditos para pequeños comercios latinoamericanos con tasas preferenciales.',
+            'Mejoró su seguridad con autenticación biométrica opcional.',
+            'Llevó Venmo para negocios a nuevas ciudades, ayudando a comercios locales.',
+            'Lanzó un fondo de apoyo a comercios golpeados por desastres naturales.'
+        ],
+        negativo: [
+            'Enfrenta una demanda colectiva por congelar fondos de usuarios sin previo aviso.',
+            'Un informe reveló cierres de cuenta arbitrarios a pequeños creadores de contenido.',
+            'Fue multada por un regulador europeo por retención abusiva de fondos.',
+            'Sufrió una filtración que expuso datos de contacto de miles de usuarios.',
+            'Legisladores cuestionaron una cláusula que permitía sanciones por "desinformación".',
+            'Comercios pequeños se quejaron de comisiones más altas que la competencia.',
+            'Una falla técnica dejó a usuarios sin acceso a sus fondos por horas.',
+            'Fue señalada por procesar pagos de un esquema piramidal no detectado a tiempo.',
+            'Reportó una desaceleración en usuarios activos que golpeó su acción.',
+            'Consumidores denunciaron trabas excesivas para recuperar fondos retenidos.'
+        ]
+    },
+    "Goldman Sachs": {
+        positivo: [
+            'Reportó ganancias trimestrales por encima de lo esperado en banca de inversión.',
+            'Asesoró una de las mayores fusiones tecnológicas del año.',
+            'Lanzó un fondo de infraestructura de energía limpia con fuerte demanda institucional.',
+            'Fue nombrada mejor banco de inversión del año en mercados emergentes.',
+            'Amplió su banca digital para pequeñas empresas.',
+            'Lanzó un programa de mentoría con financiamiento inicial para emprendedores subrepresentados.',
+            'Cerró un trimestre récord en gestión de patrimonio.',
+            'Lideró la colocación de bonos verdes para un gobierno latinoamericano.',
+            'Mejoró la diversidad de género en posiciones de liderazgo.',
+            'Asesoró la mayor salida a bolsa del año en su sector.'
+        ],
+        negativo: [
+            'Acordó pagar una multa millonaria por un escándalo de fondos soberanos malversados.',
+            'Enfrenta una demanda de empleadas por presunta discriminación salarial de género.',
+            'Un informe regulatorio cuestionó su gestión de riesgo en una crisis reciente.',
+            'Cerró su negocio de banca de consumo tras pérdidas significativas.',
+            'Fue criticada por bonos ejecutivos excesivos en medio de recortes.',
+            'Un exbanquero fue acusado de fraude en una operación vinculada a la firma.',
+            'Fue señalada por estructurar instrumentos complejos que perdieron valor para clientes.',
+            'Un informe cuestionó posibles conflictos de interés en sus recomendaciones.',
+            'Fallas en controles internos permitieron transacciones irregulares no detectadas.',
+            'Empleados protestaron por condiciones laborales exigentes en banca junior.'
+        ]
+    },
+    "Morgan Stanley": {
+        positivo: [
+            'Reportó resultados récord en su división de gestión de patrimonio.',
+            'Asesoró una fusión energética valorada en miles de millones de dólares.',
+            'Lanzó una plataforma de inversión sostenible para clientes minoristas.',
+            'Fue reconocida por su programa de diversidad en contrataciones junior.',
+            'Amplió su presencia en Asia con una nueva oficina de banca privada.',
+            'Reportó fuerte crecimiento en ingresos por comisiones de trading.',
+            'Lanzó un fondo enfocado en infraestructura de datos e inteligencia artificial.',
+            'Mejoró su calificación crediticia tras un balance sólido.',
+            'Firmó una alianza académica para investigación en finanzas cuantitativas.',
+            'Anunció un plan de recompra de acciones respaldado por resultados sólidos.'
+        ],
+        negativo: [
+            'Fue multada por fallas en el archivo de comunicaciones de empleados.',
+            'Enfrenta una investigación por presunto uso indebido de información privilegiada.',
+            'Reportó pérdidas en su unidad de bloques de acciones tras una venta masiva.',
+            'Fue criticada por recortes de personal pese a resultados positivos.',
+            'Un exempleado demandó alegando despido injustificado tras denunciar irregularidades.',
+            'Enfrentó escrutinio por su exposición a deuda de un cliente corporativo en problemas.',
+            'Un informe cuestionó la transparencia de sus honorarios de asesoría.',
+            'Fue mencionada en una revisión regulatoria sobre supervisión de traders.',
+            'Enfrentó críticas por bonos ejecutivos en un año de resultados mixtos.',
+            'Un fallo preliminar avanzó una demanda de inversionistas por pérdidas en un fondo.'
+        ]
+    },
+    "JPMorgan": {
+        positivo: [
+            'Reportó ganancias trimestrales récord impulsadas por banca de consumo.',
+            'Lanzó una plataforma de pagos en tiempo real para empresas medianas.',
+            'Fue reconocido como el banco más grande de EE.UU. por activos con sólida solvencia.',
+            'Amplió su red de sucursales en zonas desatendidas de bajos ingresos.',
+            'Lanzó un programa de crédito accesible para pequeños negocios minoritarios.',
+            'Invirtió en una startup de blockchain para pagos interbancarios.',
+            'Mejoró su calificación de sostenibilidad tras reducir financiamiento a carbón.',
+            'Reportó fuerte crecimiento en su banca de inversión en tecnología.',
+            'Lanzó una iniciativa de vivienda asequible en varias ciudades estadounidenses.',
+            'Anunció aumento salarial para empleados de sucursal de nivel inicial.'
+        ],
+        negativo: [
+            'Pagó una multa por fallas en la supervisión de un gestor de fondos fraudulento.',
+            'Enfrenta una demanda por su rol en el escándalo Jeffrey Epstein.',
+            'Un fallo técnico afectó temporalmente pagos de nómina de clientes corporativos.',
+            'Fue criticada por cerrar cuentas de clientes sin explicación clara.',
+            'Un informe señaló comisiones ocultas en productos de inversión minorista.',
+            'Enfrentó escrutinio por su financiamiento continuo a proyectos de combustibles fósiles.',
+            'Un exejecutivo fue acusado de manipular precios en el mercado de metales.',
+            'Empleados denunciaron condiciones laborales extenuantes en banca de inversión junior.',
+            'Fue multada por deficiencias en reportes de transacciones sospechosas.',
+            'Un grupo de accionistas cuestionó la remuneración de su CEO.'
+        ]
+    },
+    "Citi": {
+        positivo: [
+            'Completó una reestructuración que mejoró márgenes en banca de consumo internacional.',
+            'Lanzó una plataforma digital de tesorería para empresas globales.',
+            'Amplió su financiamiento a proyectos de energía renovable en Latinoamérica.',
+            'Fue reconocido por mejorar la representación femenina en su junta directiva.',
+            'Reportó crecimiento sólido en su negocio de tarjetas de crédito.',
+            'Lanzó un programa de alfabetización financiera para comunidades vulnerables.',
+            'Mejoró su eficiencia operativa tras la venta de negocios no estratégicos.',
+            'Firmó una alianza con fintechs para modernizar pagos transfronterizos.',
+            'Reportó una reducción sostenida en su tasa de incumplimiento crediticio.',
+            'Anunció inversión en un centro tecnológico en Bogotá.'
+        ],
+        negativo: [
+            'Fue multado por deficiencias persistentes en sus sistemas de gestión de riesgo.',
+            'Enfrenta una demanda por errores en la transferencia de 900 millones de dólares.',
+            'Anunció recortes masivos de personal en su división de banca de inversión.',
+            'Un informe cuestionó su lentitud en modernizar sistemas heredados.',
+            'Fue criticado por cerrar operaciones minoristas en varios países de golpe.',
+            'Enfrentó escrutinio regulatorio por controles antilavado insuficientes.',
+            'Un exempleado denunció presión para aprobar créditos de alto riesgo.',
+            'Reportó pérdidas inesperadas en su cartera de tarjetas de crédito.',
+            'Fue mencionado en una investigación sobre manipulación de tasas de referencia.',
+            'Enfrentó protestas de empleados por la reestructuración organizacional anunciada.'
+        ]
+    },
+    "Bank of America": {
+        positivo: [
+            'Reportó crecimiento sólido en depósitos de clientes de banca minorista.',
+            'Lanzó una app mejorada con asesoría financiera automatizada gratuita.',
+            'Amplió su compromiso de financiamiento climático a mil millones adicionales.',
+            'Fue reconocido por su programa de contratación de veteranos militares.',
+            'Reportó ganancias récord en su división de gestión de patrimonio.',
+            'Lanzó créditos hipotecarios accesibles para compradores de primera vivienda.',
+            'Mejoró su calificación de satisfacción del cliente en banca digital.',
+            'Invirtió en un programa de capacitación tecnológica para jóvenes.',
+            'Reportó una fuerte recuperación en su negocio de tarjetas de crédito.',
+            'Amplió su red de sucursales en comunidades rurales desatendidas.'
+        ],
+        negativo: [
+            'Fue multado por cobrar comisiones ilegales de sobregiro a clientes.',
+            'Enfrenta una demanda colectiva por prácticas de cobro agresivas en tarjetas.',
+            'Un informe reveló cierres desproporcionados de cuentas de pequeños negocios.',
+            'Fue criticado por su exposición a bonos del Tesoro que generaron pérdidas no realizadas.',
+            'Enfrentó escrutinio por fallas en la verificación de identidad de nuevos clientes.',
+            'Un exempleado demandó alegando discriminación racial en ascensos internos.',
+            'Reportó una caída en ganancias por mayores provisiones para incumplimientos.',
+            'Fue señalado por retrasos en resolver disputas de fraude con tarjetas.',
+            'Enfrentó protestas por el cierre de sucursales en barrios de bajos ingresos.',
+            'Un informe cuestionó la transparencia de comisiones en cuentas estudiantiles.'
+        ]
+    },
+    "Wells Fargo": {
+        positivo: [
+            'Reportó mejoras sostenidas en sus controles internos tras años de reestructuración.',
+            'Lanzó un programa de vivienda asequible con miles de créditos aprobados.',
+            'Amplió su financiamiento a pequeñas empresas propiedad de minorías.',
+            'Fue reconocido por reducir tiempos de aprobación de créditos hipotecarios.',
+            'Reportó crecimiento en su negocio de banca comercial.',
+            'Lanzó una iniciativa de educación financiera para jóvenes universitarios.',
+            'Mejoró su índice de satisfacción del cliente tras cambios en atención.',
+            'Anunció inversión en energía solar para sus operaciones internas.',
+            'Reportó una reducción en quejas de consumidores por segundo año consecutivo.',
+            'Amplió su plataforma digital de ahorro automatizado.'
+        ],
+        negativo: [
+            'Sigue bajo un límite de activos impuesto por reguladores tras el escándalo de cuentas falsas.',
+            'Fue multado nuevamente por fallas en la gestión de riesgo de sus productos.',
+            'Enfrenta una demanda por prácticas discriminatorias en préstamos hipotecarios.',
+            'Un informe reveló nuevos casos de cuentas abiertas sin autorización de clientes.',
+            'Fue criticado por despidos masivos en su división hipotecaria.',
+            'Enfrentó escrutinio por fallas en la protección de datos de empleados.',
+            'Un exempleado denunció metas de venta consideradas excesivas.',
+            'Reportó pérdidas legales relacionadas con litigios heredados de años anteriores.',
+            'Fue señalado por retrasos en reembolsar a clientes afectados por errores del banco.',
+            'Enfrentó cuestionamientos sobre la lentitud en levantar restricciones regulatorias.'
+        ]
+    },
+    "HSBC": {
+        positivo: [
+            'Reportó ganancias récord impulsadas por su negocio en Asia.',
+            'Lanzó una plataforma de financiamiento verde para pymes exportadoras.',
+            'Amplió su banca privada en el sudeste asiático.',
+            'Fue reconocido por su programa de inclusión financiera en África.',
+            'Reportó crecimiento sólido en comercio internacional financiado.',
+            'Lanzó cuentas digitales gratuitas para trabajadores migrantes.',
+            'Mejoró su eficiencia operativa tras vender negocios no estratégicos en Europa.',
+            'Firmó una alianza con universidades asiáticas para investigación en fintech.',
+            'Reportó una reducción en su huella de carbono financiada.',
+            'Amplió su oferta de hipotecas verdes en el Reino Unido.'
+        ],
+        negativo: [
+            'Fue multado por deficiencias en controles antilavado de dinero en Asia.',
+            'Enfrenta escrutinio por su exposición a un mercado inmobiliario chino en crisis.',
+            'Un informe cuestionó su rol histórico en el financiamiento de negocios opacos.',
+            'Fue criticado por cerrar cuentas de clientes vinculados a ciertas industrias sin aviso.',
+            'Enfrentó protestas de accionistas por la lentitud de su reestructuración.',
+            'Un exejecutivo fue acusado de manipular tasas de interés de referencia.',
+            'Reportó pérdidas en su negocio de banca de inversión europea.',
+            'Fue señalado por retrasos en pagar compensaciones a clientes afectados por fraude.',
+            'Enfrentó críticas por reducir su plantilla en mercados occidentales.',
+            'Un informe regulatorio identificó debilidades en su gestión de riesgo climático.'
+        ]
+    },
+    "Santander": {
+        positivo: [
+            'Reportó ganancias récord impulsadas por su negocio en Brasil y México.',
+            'Lanzó una plataforma digital que simplifica hipotecas en menos de una semana.',
+            'Amplió su financiamiento a pymes en España tras la pandemia.',
+            'Fue reconocido por su programa de becas universitarias en Latinoamérica.',
+            'Reportó crecimiento sólido en su banca digital Openbank.',
+            'Lanzó créditos para vehículos eléctricos con tasas preferenciales.',
+            'Mejoró su calificación de sostenibilidad tras reducir financiamiento a carbón.',
+            'Firmó una alianza con fintechs para pagos instantáneos en la región.',
+            'Reportó una reducción en su tasa de morosidad regional.',
+            'Amplió su red de cajeros inteligentes en zonas rurales.'
+        ],
+        negativo: [
+            'Fue multado por fallas en la protección de datos de clientes europeos.',
+            'Enfrenta una demanda por comisiones ocultas en productos de inversión.',
+            'Un informe reveló errores masivos en pagos que afectaron a miles de clientes.',
+            'Fue criticado por cerrar sucursales en zonas rurales de España.',
+            'Enfrentó escrutinio por su exposición a deuda soberana argentina.',
+            'Un exempleado denunció presión para vender productos financieros innecesarios.',
+            'Reportó pérdidas inesperadas en su filial de consumo estadounidense.',
+            'Fue señalado por retrasos en resolver reclamos de fraude con tarjetas.',
+            'Enfrentó protestas sindicales por recortes de personal en Europa.',
+            'Un informe cuestionó la transparencia de sus comisiones bancarias.'
+        ]
+    },
+    "BBVA": {
+        positivo: [
+            'Reportó ganancias récord impulsadas por su negocio en México.',
+            'Lanzó una app con asesoría financiera personalizada basada en IA.',
+            'Amplió su financiamiento a proyectos de energía renovable en España.',
+            'Fue reconocido por su transformación digital pionera en banca europea.',
+            'Reportó crecimiento sólido en clientes digitales sin sucursal física.',
+            'Lanzó microcréditos para emprendedores en zonas rurales de Colombia.',
+            'Mejoró su eficiencia operativa tras cerrar brechas tecnológicas heredadas.',
+            'Firmó una alianza con startups fintech para pagos entre países.',
+            'Reportó una reducción sostenida en costos de operación por digitalización.',
+            'Amplió su compromiso de financiamiento sostenible a 300 mil millones de euros.'
+        ],
+        negativo: [
+            'Fue investigado por un escándalo de espionaje corporativo contra rivales.',
+            'Enfrenta una demanda por cláusulas abusivas en hipotecas antiguas.',
+            'Un informe cuestionó su exposición a activos inmobiliarios en Turquía.',
+            'Fue criticado por cerrar cientos de sucursales en España en poco tiempo.',
+            'Enfrentó escrutinio regulatorio por comisiones en fondos de pensiones.',
+            'Un exdirectivo fue acusado de participar en pagos irregulares a terceros.',
+            'Reportó pérdidas cambiarias significativas por la volatilidad en Turquía.',
+            'Fue señalado por retrasos en digitalizar procesos en sucursales rurales.',
+            'Enfrentó protestas de empleados por la automatización de puestos de atención.',
+            'Un informe reveló quejas de clientes por bloqueos injustificados de tarjetas.'
+        ]
+    },
+    "Davivienda": {
+        positivo: [
+            'Reportó crecimiento sólido en su cartera de crédito hipotecario en Colombia.',
+            'Lanzó una app renovada con apertura de cuentas en minutos.',
+            'Amplió su financiamiento a pequeñas empresas afectadas por la pandemia.',
+            'Fue reconocido por su programa de educación financiera en colegios públicos.',
+            'Reportó una reducción en tiempos de aprobación de créditos de consumo.',
+            'Lanzó una línea de crédito verde para vivienda sostenible.',
+            'Mejoró su calificación de servicio al cliente en encuestas nacionales.',
+            'Firmó una alianza con fintechs para pagos móviles en zonas rurales.',
+            'Reportó crecimiento en clientes de banca digital sin sucursal.',
+            'Amplió su cobertura de corresponsales bancarios en municipios pequeños.'
+        ],
+        negativo: [
+            'Fue sancionado por la Superintendencia Financiera por fallas en atención al cliente.',
+            'Enfrenta reclamos por bloqueos de tarjetas sin notificación adecuada.',
+            'Un informe reveló demoras en la devolución de dinero por fraudes.',
+            'Fue criticado por el aumento de tarifas en productos de ahorro básico.',
+            'Enfrentó una caída temporal de su plataforma digital durante horas de alta demanda.',
+            'Un cliente denunció públicamente cobros indebidos en su tarjeta de crédito.',
+            'Reportó un aumento en la cartera vencida de créditos de consumo.',
+            'Fue señalado por lentitud en resolver quejas ante la Defensoría del Consumidor Financiero.',
+            'Enfrentó críticas por el cierre de oficinas en municipios pequeños.',
+            'Un informe cuestionó la claridad de la información sobre seguros asociados a créditos.'
+        ]
+    },
+    "NuBank": {
+        positivo: [
+            'Superó los 100 millones de clientes en América Latina, un hito para la fintech.',
+            'Lanzó una cuenta de inversión accesible sin montos mínimos en Brasil.',
+            'Fue reconocido como una de las fintechs más innovadoras del mundo.',
+            'Reportó su primer año de rentabilidad sostenida a nivel regional.',
+            'Amplió su tarjeta de crédito sin anualidad a nuevos países.',
+            'Lanzó un seguro de vida simplificado dentro de su app.',
+            'Mejoró su tiempo de aprobación de crédito a segundos mediante IA.',
+            'Firmó una alianza con comercios para cashback instantáneo.',
+            'Reportó una reducción significativa en fraudes gracias a autenticación biométrica.',
+            'Expandió sus operaciones de crédito a México con buena acogida.'
+        ],
+        negativo: [
+            'Enfrentó una caída masiva de su app que dejó a usuarios sin acceso por horas.',
+            'Fue criticada por cierres de cuenta automatizados sin explicación clara.',
+            'Un informe cuestionó la dificultad de contactar soporte humano en casos complejos.',
+            'Enfrentó reclamos por aumentos inesperados en tasas de interés de tarjetas.',
+            'Fue señalada por demoras en procesar reembolsos de compras disputadas.',
+            'Un regulador brasileño cuestionó su ritmo de expansión crediticia.',
+            'Enfrentó críticas por publicidad considerada engañosa sobre beneficios de inversión.',
+            'Reportó un aumento en su tasa de morosidad en créditos personales.',
+            'Fue mencionada en quejas por bloqueos preventivos de cuentas sin previo aviso.',
+            'Un informe de consumidores señaló letra pequeña poco clara en seguros ofrecidos.'
+        ]
+    },
+    "Revolut": {
+        positivo: [
+            'Superó los 45 millones de usuarios globales, consolidando su expansión europea.',
+            'Lanzó cuentas de ahorro con tasas competitivas en varios mercados.',
+            'Obtuvo su licencia bancaria completa en el Reino Unido tras años de espera.',
+            'Fue reconocida por su rapidez en el cambio de divisas sin comisiones ocultas.',
+            'Amplió su servicio de inversión fraccionada a nuevos países europeos.',
+            'Lanzó tarjetas físicas hechas con metal reciclado, bien recibidas por usuarios jóvenes.',
+            'Mejoró su sistema antifraude reduciendo reclamos de usuarios.',
+            'Firmó una alianza con comercios para recompensas instantáneas en cripto.',
+            'Reportó su primer año de rentabilidad a nivel de grupo.',
+            'Expandió su servicio de nómina para trabajadores independientes en Europa.'
+        ],
+        negativo: [
+            'Fue criticada por congelar cuentas de usuarios sin explicación durante semanas.',
+            'Enfrentó escrutinio regulatorio por retrasos en obtener licencias en varios países.',
+            'Un informe reveló fallas en la atención al cliente ante casos de fraude.',
+            'Fue señalada por publicidad considerada engañosa sobre sus tarifas de cripto.',
+            'Enfrentó críticas por condiciones laborales exigentes reportadas por exempleados.',
+            'Un regulador europeo cuestionó su cumplimiento en controles antilavado.',
+            'Reportó un aumento en quejas de usuarios por bloqueos preventivos.',
+            'Fue mencionada en una investigación sobre uso de datos de usuarios.',
+            'Enfrentó una filtración menor de datos que expuso información de contacto.',
+            'Un informe periodístico cuestionó la transparencia de sus comisiones ocultas en conversión de divisas.'
+        ]
+    },
+    "Stripe": {
+        positivo: [
+            'Amplió su infraestructura de pagos a nuevos mercados en África y Asia.',
+            'Lanzó herramientas de facturación automatizada para pequeñas empresas.',
+            'Fue reconocida como la plataforma preferida por startups tecnológicas globales.',
+            'Reportó un crecimiento sólido en volumen de pagos procesados.',
+            'Lanzó un producto de prevención de fraude basado en aprendizaje automático.',
+            'Firmó alianzas con grandes marcas de comercio electrónico para pagos internacionales.',
+            'Mejoró su tiempo de aprobación de cuentas para comercios nuevos.',
+            'Amplió su servicio de nómina y beneficios para pequeñas empresas.',
+            'Reportó una valoración estable pese a la volatilidad del sector tecnológico.',
+            'Lanzó soporte para pagos en criptomonedas seleccionadas.'
+        ],
+        negativo: [
+            'Fue criticada por el cierre repentino de cuentas de comercios sin previo aviso.',
+            'Enfrentó reclamos por retención prolongada de fondos de pequeñas empresas.',
+            'Un informe cuestionó la dificultad de contactar soporte para disputas complejas.',
+            'Fue señalada por comisiones más altas que competidores en ciertos mercados.',
+            'Enfrentó críticas por recortes de personal pese a crecimiento en ingresos.',
+            'Un cliente denunció públicamente bloqueos de cuenta sin explicación clara.',
+            'Reportó una falla técnica que afectó procesamiento de pagos durante horas.',
+            'Fue mencionada en un informe sobre riesgos de concentración en infraestructura de pagos.',
+            'Enfrentó escrutinio por procesar pagos de comercios de alto riesgo.',
+            'Un informe periodístico cuestionó la transparencia de su proceso de aprobación de cuentas.'
+        ]
+    },
+    "Square": {
+        positivo: [
+            'Amplió su ecosistema de punto de venta a nuevos sectores de restaurantes.',
+            'Lanzó créditos rápidos para pequeños negocios basados en historial de ventas.',
+            'Reportó crecimiento sólido en su app de pagos personales Cash App.',
+            'Fue reconocida por facilitar la formalización de negocios informales.',
+            'Lanzó herramientas gratuitas de nómina para microempresas.',
+            'Firmó una alianza con proveedores de inventario para pequeños comercios.',
+            'Mejoró su plataforma antifraude reduciendo reclamos de usuarios.',
+            'Amplió su servicio de pagos internacionales para vendedores en línea.',
+            'Reportó un aumento en la adopción de sus terminales entre food trucks y mercados.',
+            'Lanzó una función de ahorro automático vinculada a ventas diarias.'
+        ],
+        negativo: [
+            'Enfrentó una demanda por fallas de seguridad que expusieron datos de usuarios de Cash App.',
+            'Fue criticada por retrasos en resolver disputas de fraude en pagos entre pares.',
+            'Un informe cuestionó comisiones poco claras para pequeños comercios.',
+            'Enfrentó escrutinio regulatorio por el manejo de fondos en Cash App.',
+            'Fue señalada por cierres de cuenta sin previo aviso a vendedores activos.',
+            'Reportó pérdidas relacionadas con fraude en transacciones entre usuarios.',
+            'Un exempleado denunció condiciones laborales exigentes en soporte al cliente.',
+            'Enfrentó críticas por publicidad considerada engañosa sobre beneficios de cripto.',
+            'Un informe periodístico señaló uso de Cash App en esquemas de estafa.',
+            'Fue mencionada en una investigación sobre controles antilavado insuficientes.'
+        ]
+    },
+    "Robinhood": {
+        positivo: [
+            'Amplió el acceso a inversión sin comisiones a millones de usuarios jóvenes.',
+            'Lanzó cuentas de retiro individual con aportes automáticos.',
+            'Reportó un aumento en usuarios activos tras mejoras en su plataforma.',
+            'Fue reconocida por simplificar el acceso a mercados financieros para principiantes.',
+            'Lanzó educación financiera gratuita integrada en su app.',
+            'Mejoró su sistema de ejecución de órdenes reduciendo tiempos de espera.',
+            'Amplió su oferta a bonos del Tesoro accesibles para pequeños inversionistas.',
+            'Firmó una alianza para ofrecer tarjetas de débito con recompensas en acciones.',
+            'Reportó una reducción en quejas relacionadas con caídas de plataforma.',
+            'Lanzó soporte telefónico ampliado tras críticas anteriores por atención limitada.'
+        ],
+        negativo: [
+            'Fue multada por restringir la compra de acciones durante la volatilidad de GameStop.',
+            'Enfrenta demandas de usuarios que alegan pérdidas por fallas de la plataforma.',
+            'Un informe cuestionó su modelo de pago por flujo de órdenes.',
+            'Fue criticada por gamificar la inversión de manera que fomenta riesgos excesivos.',
+            'Enfrentó escrutinio tras el suicidio de un usuario joven vinculado a pérdidas en la app.',
+            'Un regulador cuestionó la claridad de sus advertencias de riesgo para principiantes.',
+            'Reportó una filtración de datos que expuso información de millones de usuarios.',
+            'Fue señalada por caídas de plataforma en días de alta volatilidad del mercado.',
+            'Enfrentó críticas por retrasos en atender reclamos de soporte al cliente.',
+            'Un informe periodístico cuestionó la transparencia de sus prácticas de préstamo de valores.'
+        ]
+    },
+    "eToro": {
+        positivo: [
+            'Amplió su comunidad de inversión social a más de 35 millones de usuarios.',
+            'Lanzó carteras temáticas automatizadas centradas en tecnología sostenible.',
+            'Fue reconocida por su modelo de copia de operaciones entre inversionistas.',
+            'Reportó crecimiento sólido en su segmento de criptomonedas reguladas.',
+            'Lanzó educación financiera gratuita para inversionistas principiantes.',
+            'Mejoró su plataforma móvil con análisis de mercado en tiempo real.',
+            'Firmó alianzas con reguladores para ampliar su presencia en nuevos países.',
+            'Amplió su oferta de acciones fraccionadas a mercados emergentes.',
+            'Reportó una reducción en tiempos de retiro de fondos para usuarios verificados.',
+            'Lanzó herramientas de gestión de riesgo para operadores novatos.'
+        ],
+        negativo: [
+            'Fue criticada por comisiones ocultas en la conversión de divisas.',
+            'Enfrentó escrutinio regulatorio por la promoción agresiva de productos de alto riesgo.',
+            'Un informe cuestionó pérdidas reportadas por usuarios que copiaron operadores populares.',
+            'Fue señalada por demoras en procesar retiros de fondos de usuarios.',
+            'Enfrentó reclamos por bloqueos de cuenta durante períodos de alta volatilidad.',
+            'Un informe periodístico cuestionó la transparencia de su modelo de ingresos por spread.',
+            'Fue mencionada en una investigación sobre publicidad engañosa de criptoactivos.',
+            'Enfrentó críticas por la dificultad de contactar soporte en disputas complejas.',
+            'Reportó una caída de plataforma durante un evento de mercado de alta demanda.',
+            'Un regulador europeo cuestionó la claridad de sus advertencias de riesgo.'
+        ]
+    },
+    "Capital One": {
+        positivo: [
+            'Reportó crecimiento sólido en su cartera de tarjetas de crédito premium.',
+            'Lanzó una plataforma de banca digital sin comisiones ocultas.',
+            'Amplió su financiamiento a pequeñas empresas afectadas por la inflación.',
+            'Fue reconocida por su programa de contratación de personas con discapacidad.',
+            'Reportó una reducción en fraudes gracias a alertas en tiempo real.',
+            'Lanzó herramientas gratuitas de monitoreo de puntaje crediticio.',
+            'Mejoró su calificación de satisfacción del cliente en banca móvil.',
+            'Firmó una alianza con universidades para educación financiera juvenil.',
+            'Reportó crecimiento sostenido en depósitos de ahorro de alto rendimiento.',
+            'Amplió su compromiso de financiamiento a vivienda asequible.'
+        ],
+        negativo: [
+            'Sufrió una de las mayores filtraciones de datos de la historia bancaria, exponiendo a millones de clientes.',
+            'Fue multada por prácticas de cobro agresivas en tarjetas de crédito.',
+            'Enfrenta una demanda colectiva relacionada con la filtración de datos previa.',
+            'Fue criticada por comisiones elevadas en cuentas de ahorro tradicionales.',
+            'Enfrentó escrutinio por su exposición a créditos de consumo de alto riesgo.',
+            'Un exempleado denunció presión para aprobar tarjetas a clientes de bajo ingreso.',
+            'Reportó un aumento en su tasa de incumplimiento en préstamos de auto.',
+            'Fue señalada por retrasos en resolver disputas de fraude con tarjetas.',
+            'Enfrentó críticas por el cierre de sucursales físicas en varias ciudades.',
+            'Un informe cuestionó la transparencia de sus políticas de intereses moratorios.'
+        ]
+    },
+    "BlackRock": {
+        positivo: [
+            'Superó los 10 billones de dólares en activos bajo gestión, un hito de la industria.',
+            'Lanzó fondos indexados de bajo costo enfocados en energía limpia.',
+            'Fue reconocida por su influencia en promover gobernanza corporativa responsable.',
+            'Reportó crecimiento sólido en su plataforma tecnológica Aladdin para gestores de riesgo.',
+            'Lanzó productos de inversión accesibles para pequeños ahorradores.',
+            'Amplió su oferta de fondos de infraestructura en mercados emergentes.',
+            'Mejoró la transparencia de sus reportes de impacto ambiental.',
+            'Firmó una alianza con gobiernos para financiar proyectos de infraestructura verde.',
+            'Reportó una reducción en comisiones de varios de sus fondos principales.',
+            'Lanzó educación financiera gratuita para inversionistas jóvenes.'
+        ],
+        negativo: [
+            'Enfrentó críticas de ambos lados políticos por su enfoque de inversión ESG.',
+            'Fue acusada por varios estados de priorizar criterios climáticos sobre retornos.',
+            'Un informe cuestionó su concentración de poder de voto en miles de empresas cotizadas.',
+            'Fue criticada por mantener inversiones en combustibles fósiles pese a compromisos climáticos.',
+            'Enfrentó escrutinio por posibles conflictos de interés en su rol como asesor de bancos centrales.',
+            'Un grupo de inversionistas cuestionó comisiones en fondos de gestión activa.',
+            'Fue señalada en una investigación sobre concentración de mercado en índices pasivos.',
+            'Enfrentó protestas de activistas climáticos frente a sus oficinas centrales.',
+            'Un informe periodístico cuestionó la transparencia de su plataforma Aladdin.',
+            'Fue mencionada en debates regulatorios sobre riesgo sistémico de grandes gestoras.'
+        ]
+    },
+    "Charles Schwab": {
+        positivo: [
+            'Reportó crecimiento sólido en cuentas de corretaje sin comisiones.',
+            'Lanzó asesoría financiera automatizada gratuita para clientes de bajo saldo.',
+            'Fue reconocida por su modelo pionero de inversión sin comisiones.',
+            'Completó exitosamente la integración de TD Ameritrade tras la adquisición.',
+            'Reportó un aumento en activos de clientes pese a la volatilidad del mercado.',
+            'Lanzó educación financiera gratuita para jóvenes inversionistas.',
+            'Mejoró su plataforma móvil con herramientas de planificación de retiro.',
+            'Amplió su oferta de fondos indexados de bajo costo.',
+            'Firmó una alianza con universidades para programas de finanzas personales.',
+            'Reportó una reducción en tiempos de apertura de cuentas nuevas.'
+        ],
+        negativo: [
+            'Enfrentó una fuga de depósitos tras la crisis de bancos regionales en EE.UU.',
+            'Fue criticada por pérdidas no realizadas en su cartera de bonos a largo plazo.',
+            'Un informe cuestionó demoras en la integración tecnológica con TD Ameritrade.',
+            'Fue señalada por comisiones ocultas en ciertos fondos de gestión activa.',
+            'Enfrentó reclamos de clientes por fallas en la plataforma durante alta volatilidad.',
+            'Un exempleado denunció recortes de personal tras la fusión con TD Ameritrade.',
+            'Reportó una caída en ingresos por intereses tras cambios en tasas.',
+            'Fue mencionada en un informe sobre riesgos de concentración de depósitos.',
+            'Enfrentó críticas por el cierre de sucursales físicas en zonas rurales.',
+            'Un informe periodístico cuestionó la transparencia de su programa de préstamo de valores.'
+        ]
+    },
+    "Deutsche Bank": {
+        positivo: [
+            'Reportó su mejor resultado trimestral en más de una década.',
+            'Completó exitosamente un plan de reestructuración que redujo costos significativamente.',
+            'Amplió su financiamiento a proyectos de energía renovable en Europa.',
+            'Fue reconocido por mejorar sus controles internos tras años de escrutinio.',
+            'Lanzó una plataforma digital simplificada para pequeñas empresas alemanas.',
+            'Reportó crecimiento sólido en su división de banca de inversión.',
+            'Mejoró su calificación crediticia tras estabilizar su balance.',
+            'Firmó una alianza tecnológica para modernizar sistemas de pago internos.',
+            'Reportó una reducción en litigios heredados de años anteriores.',
+            'Amplió su compromiso de financiamiento sostenible en Europa.'
+        ],
+        negativo: [
+            'Fue investigado por su rol en el escándalo de lavado de dinero de un banco báltico.',
+            'Enfrenta una demanda relacionada con su relación comercial previa con Jeffrey Epstein.',
+            'Un informe cuestionó debilidades persistentes en sus controles antilavado.',
+            'Fue multado por deficiencias en la supervisión de operaciones de trading.',
+            'Enfrentó escrutinio por su exposición a bienes raíces comerciales en EE.UU.',
+            'Un exejecutivo fue acusado de manipular índices de referencia años atrás.',
+            'Reportó recortes de miles de empleos como parte de su reestructuración.',
+            'Fue señalado por retrasos en resolver litigios legales heredados.',
+            'Enfrentó críticas por bonos ejecutivos pese a años de resultados débiles.',
+            'Un informe periodístico cuestionó su cultura de gestión de riesgo interna.'
+        ]
+    },
+    "Banco Itaú": {
+        positivo: [
+            'Reportó ganancias récord como el mayor banco privado de América Latina.',
+            'Lanzó una plataforma digital de inversión accesible para pequeños ahorradores.',
+            'Amplió su financiamiento a pymes brasileñas afectadas por tasas altas.',
+            'Fue reconocido por su programa de inclusión financiera en zonas rurales.',
+            'Reportó crecimiento sólido en su banco digital Iti.',
+            'Lanzó créditos verdes para agricultura sostenible en Brasil.',
+            'Mejoró su calificación de sostenibilidad tras reducir financiamiento a deforestación.',
+            'Firmó una alianza con fintechs para pagos instantáneos vía Pix.',
+            'Reportó una reducción en su tasa de morosidad regional.',
+            'Amplió su cobertura de banca privada en Colombia y Chile.'
+        ],
+        negativo: [
+            'Fue criticado por su exposición histórica a financiamiento vinculado a deforestación.',
+            'Enfrenta reclamos por comisiones elevadas en fondos de inversión minoristas.',
+            'Un informe cuestionó demoras en resolver disputas de fraude con tarjetas.',
+            'Fue señalado por el cierre de sucursales físicas en ciudades medianas.',
+            'Enfrentó escrutinio por su exposición a deuda de empresas brasileñas en dificultades.',
+            'Un exempleado denunció presión de ventas en sucursales minoristas.',
+            'Reportó un aumento en la cartera vencida de créditos de consumo.',
+            'Fue mencionado en quejas de consumidores por bloqueos preventivos de cuentas.',
+            'Enfrentó críticas por la lentitud en digitalizar procesos en zonas rurales.',
+            'Un informe periodístico cuestionó la claridad de sus seguros asociados a créditos.'
+        ]
+    },
+    "UBS": {
+        positivo: [
+            'Completó exitosamente la integración de Credit Suisse tras el rescate de emergencia.',
+            'Reportó ganancias récord impulsadas por sinergias de la adquisición.',
+            'Amplió su banca privada para clientes de alto patrimonio en Asia.',
+            'Fue reconocida por estabilizar el sistema financiero suizo durante la crisis de 2023.',
+            'Reportó crecimiento sólido en gestión de activos globales.',
+            'Lanzó productos de inversión sostenible para clientes institucionales.',
+            'Mejoró su calificación crediticia tras absorber a su rival con éxito.',
+            'Firmó una alianza tecnológica para modernizar su banca digital.',
+            'Reportó una reducción en costos operativos tras la fusión.',
+            'Amplió su presencia en mercados de gestión de patrimonio en Medio Oriente.'
+        ],
+        negativo: [
+            'Enfrenta escrutinio regulatorio por los riesgos heredados de la absorción de Credit Suisse.',
+            'Fue criticada por recortes masivos de empleos tras la fusión.',
+            'Un informe cuestionó su exposición a litigios heredados de Credit Suisse.',
+            'Enfrentó protestas de empleados suizos por la reestructuración postfusión.',
+            'Fue señalada por la lentitud en integrar sistemas tecnológicos de ambos bancos.',
+            'Un exejecutivo de Credit Suisse fue acusado de gestión negligente previa a la crisis.',
+            'Reportó pérdidas relacionadas con activos tóxicos heredados de la fusión.',
+            'Enfrentó críticas por bonos ejecutivos pese a los recortes de personal.',
+            'Un informe periodístico cuestionó riesgos de concentración tras la fusión.',
+            'Fue mencionada en debates regulatorios sobre bancos "demasiado grandes para quebrar".'
+        ]
+    },
+    "American Express": {
+        positivo: [
+            'Reportó crecimiento sólido en gasto de sus tarjetahabientes premium.',
+            'Lanzó beneficios ampliados de viaje para su tarjeta insignia.',
+            'Fue reconocida por su servicio al cliente superior en encuestas de la industria.',
+            'Amplió su red de aceptación en comercios pequeños de América Latina.',
+            'Reportó un aumento en nuevas cuentas entre consumidores jóvenes.',
+            'Lanzó un programa de recompensas por compras sostenibles.',
+            'Mejoró su plataforma de gestión de gastos para pequeñas empresas.',
+            'Firmó una alianza con aerolíneas para beneficios exclusivos de viaje.',
+            'Reportó una reducción en su tasa de fraude gracias a nueva tecnología.',
+            'Amplió su oferta de tarjetas sin anualidad para nuevos mercados.'
+        ],
+        negativo: [
+            'Fue multada por prácticas de venta engañosas en productos para pequeñas empresas.',
+            'Enfrenta una demanda por discriminación en la aprobación de crédito.',
+            'Un informe cuestionó las altas comisiones que cobra a comercios pequeños.',
+            'Fue criticada por dificultar cancelaciones de tarjetas con anualidad alta.',
+            'Enfrentó escrutinio por publicidad considerada engañosa sobre beneficios de viaje.',
+            'Un exempleado denunció metas de venta agresivas en su división comercial.',
+            'Reportó un aumento en quejas de consumidores por cargos no reconocidos.',
+            'Fue señalada por retrasos en resolver disputas de fraude internacional.',
+            'Enfrentó críticas por limitar la aceptación en pequeños comercios por altas comisiones.',
+            'Un informe periodístico cuestionó la transparencia de sus políticas de intereses.'
+        ]
+    },
+    "ING Group": {
+        positivo: [
+            'Reportó ganancias sólidas impulsadas por su banca digital paneuropea.',
+            'Lanzó una app renovada con gestión de presupuesto automatizada.',
+            'Amplió su financiamiento a proyectos de energía renovable en Europa.',
+            'Fue reconocido por su compromiso de descarbonizar su cartera de préstamos.',
+            'Reportó crecimiento sólido en clientes digitales en Alemania y España.',
+            'Lanzó hipotecas verdes con tasas preferenciales para viviendas eficientes.',
+            'Mejoró su calificación de sostenibilidad entre bancos europeos.',
+            'Firmó una alianza con startups fintech para pagos instantáneos.',
+            'Reportó una reducción en costos operativos por digitalización continua.',
+            'Amplió su oferta de inversión sostenible para clientes minoristas.'
+        ],
+        negativo: [
+            'Fue multado por fallas graves en sus controles antilavado de dinero.',
+            'Enfrenta escrutinio por financiamiento continuo a proyectos de gas natural.',
+            'Un informe cuestionó la lentitud en cumplir sus metas climáticas declaradas.',
+            'Fue criticado por cerrar cuentas de clientes sin explicación adecuada.',
+            'Enfrentó reclamos por fallas técnicas que afectaron pagos durante horas.',
+            'Un exempleado denunció presión de ventas en productos de inversión.',
+            'Reportó un aumento en provisiones por incumplimientos crediticios.',
+            'Fue señalado por retrasos en resolver disputas de fraude con tarjetas.',
+            'Enfrentó críticas por el cierre de sucursales físicas en Países Bajos.',
+            'Un informe periodístico cuestionó la transparencia de sus comisiones en fondos.'
+        ]
+    },
+    "Credit Suisse": {
+        positivo: [
+            'Antes de su absorción, mantuvo una posición fuerte en banca privada asiática.',
+            'Su gestión de patrimonio fue reconocida por su servicio personalizado a clientes globales.',
+            'Desarrolló productos de inversión sostenible bien recibidos por clientes institucionales.',
+            'Mantuvo alianzas académicas sólidas en investigación de mercados financieros.',
+            'Su red de banca privada en Medio Oriente mostró crecimiento constante antes de la crisis.',
+            'Lanzó iniciativas de diversidad en contratación que fueron reconocidas por la industria.',
+            'Su plataforma digital para clientes de alto patrimonio recibió buenas calificaciones.',
+            'Mantuvo una cartera sólida de clientes corporativos en mercados emergentes.',
+            'Su equipo de análisis de mercados fue valorado por la precisión de sus reportes.',
+            'Contribuyó a financiar proyectos de infraestructura sostenible en Europa antes de su fusión.'
+        ],
+        negativo: [
+            'Colapsó en 2023 tras una crisis de confianza que forzó su rescate y absorción por UBS.',
+            'Estuvo vinculado al colapso del fondo Archegos, que le costó miles de millones.',
+            'Enfrentó el escándalo Greensill, que expuso fallas graves en su gestión de riesgo.',
+            'Fue multado por su rol en un escándalo de espionaje corporativo interno.',
+            'Enfrentó una fuga masiva de depósitos de clientes antes de su caída.',
+            'Un informe regulatorio calificó su gestión de riesgo como profundamente deficiente.',
+            'Fue criticado por bonos ejecutivos pese a pérdidas multimillonarias recurrentes.',
+            'Enfrentó investigaciones por facilitar la evasión fiscal de clientes extranjeros.',
+            'Perdió la confianza de inversionistas tras años de escándalos consecutivos.',
+            'Sus empleados enfrentaron incertidumbre laboral masiva durante la absorción de emergencia.'
+        ]
+    },
+    "Commerzbank": {
+        positivo: [
+            'Reportó su mejor resultado anual en más de una década.',
+            'Amplió su financiamiento a pymes alemanas del sector manufacturero.',
+            'Lanzó una plataforma digital simplificada para banca comercial.',
+            'Fue reconocido por mejorar su eficiencia operativa tras reestructuración.',
+            'Reportó crecimiento sólido en su negocio de comercio internacional.',
+            'Mejoró su calificación crediticia tras estabilizar su balance.',
+            'Firmó una alianza tecnológica para modernizar sistemas de pago.',
+            'Reportó una reducción en costos tras cerrar sucursales no rentables.',
+            'Amplió su compromiso de financiamiento a energía renovable.',
+            'Lanzó productos de ahorro con tasas competitivas para clientes minoristas.'
+        ],
+        negativo: [
+            'Fue objeto de un intento de adquisición hostil por parte de UniCredit que generó incertidumbre.',
+            'Enfrentó protestas sindicales por recortes de personal planeados.',
+            'Un informe cuestionó su vulnerabilidad ante una posible fusión no deseada.',
+            'Fue criticado por su exposición histórica a préstamos navieros riesgosos.',
+            'Enfrentó escrutinio del gobierno alemán por su papel estratégico nacional.',
+            'Un exejecutivo denunció presión política en decisiones corporativas clave.',
+            'Reportó pérdidas en años anteriores relacionadas con activos tóxicos heredados.',
+            'Fue señalado por la lentitud en digitalizar su red de sucursales.',
+            'Enfrentó críticas por bonos ejecutivos en medio de incertidumbre por la adquisición.',
+            'Un informe periodístico cuestionó la estabilidad de su estrategia a largo plazo.'
+        ]
+    },
+    "Mizuho": {
+        positivo: [
+            'Reportó ganancias sólidas impulsadas por su negocio de banca corporativa en Asia.',
+            'Amplió su financiamiento a proyectos de energía renovable en Japón.',
+            'Fue reconocido por su rol en financiar la transición energética japonesa.',
+            'Reportó crecimiento sólido en su división de banca de inversión internacional.',
+            'Lanzó una plataforma digital para pequeñas empresas exportadoras.',
+            'Mejoró su calificación de sostenibilidad tras reducir financiamiento a carbón.',
+            'Firmó una alianza tecnológica con una fintech surcoreana.',
+            'Reportó una reducción en su exposición a activos de riesgo elevado.',
+            'Amplió su presencia en mercados de deuda del sudeste asiático.',
+            'Lanzó productos de ahorro digital para clientes jóvenes japoneses.'
+        ],
+        negativo: [
+            'Fue sancionado por reguladores japoneses tras fallas sistémicas repetidas en sus plataformas digitales.',
+            'Enfrentó críticas por una serie de apagones de sistemas que afectaron a millones de clientes.',
+            'Un informe cuestionó la gestión de su junta directiva tras años de fallas operativas.',
+            'Fue señalado por su exposición continua a financiamiento de combustibles fósiles.',
+            'Enfrentó escrutinio por retrasos en modernizar infraestructura tecnológica heredada.',
+            'Un exejecutivo renunció tras la presión pública por las fallas de sistemas.',
+            'Reportó pérdidas relacionadas con posiciones de bonos extranjeros afectadas por tasas.',
+            'Fue criticado por la lentitud en compensar a clientes afectados por interrupciones.',
+            'Enfrentó protestas de accionistas por la falta de responsabilidad tras las fallas.',
+            'Un informe periodístico cuestionó la cultura corporativa de gestión de crisis del banco.'
+        ]
+    }
+};
+
+Object.entries(NOTICIAS_EMPRESA_FINANZAS).forEach(([empresa, datos]) => {
+    registrarNoticiasEmpresa(empresa, datos.positivo, datos.negativo);
+});
 
 function slugEmpresa(nombre) {
     return String(nombre || '')
@@ -2999,6 +4460,7 @@ function getImagenNoticia(emp) {
     return getEmpresaLogo(emp);
 }
 
+cargarNoticiasLocales();
 setInterval(() => { if(usuarioActual) generarNoticia(); }, 10000);
 
 // ==========================================
@@ -3043,15 +4505,48 @@ function updatePrecioEmpresa(emp) {
     if (usuarioActual) {
         let cat = meta.sector;
         let catMult = sectorBoost[cat] || 1.0;
-        let newsMult = sectorBoost["news_"+cat] || 1.0;
-        let variacion = (Math.random() - 0.5) * 2 * meta.vol * catMult * newsMult * 0.35;
+        let newsMult = sectorBoost["news_" + cat] || 1.0;
+        let ahora = Date.now();
+        let deltaSegundos = meta.ultimaActualizacion ? Math.min(8, Math.max(0.5, (ahora - meta.ultimaActualizacion) / 1000)) : 2;
+        meta.ultimaActualizacion = ahora;
+
+        const mercadoMood = Number(mercadoGlobal.fuerza || 0);
+        const sectorTrend = (catMult * newsMult - 1) * 0.0018;
+        const newsRecency = noticiasHistorial.filter(n => n.empresa === emp).slice(0, 3).reduce((acc, item) => acc + Number(item.impacto || 0), 0) * 0.35;
+        const eventPressure = Number(meta.impulsoEvento || 0) * 0.9;
+        const recovery = Number(meta.recuperacion || 0);
+        const noise = (Math.random() - 0.5) * (meta.vol || 0.02) * 0.22 * Math.sqrt(deltaSegundos);
+
+        meta.tendencia = Math.max(-0.0022, Math.min(0.0022,
+            (meta.tendencia || 0) * 0.9 +
+            (Math.random() - 0.5) * 0.00012 +
+            mercadoMood * 0.75 +
+            sectorTrend * 1.5
+        ));
+
+        let variacion = (
+            meta.tendencia +
+            mercadoMood +
+            sectorTrend +
+            eventPressure +
+            recovery +
+            newsRecency +
+            noise
+        ) * deltaSegundos * 1.8;
+
         let oldPrice = preciosMercado[emp];
         let newPrice = oldPrice * (1 + variacion);
-        if (newPrice < 0.00001) newPrice = 0.00001;
+        let precioMinimo = Math.max(0.00001, meta.basePrice * 0.03);
+        let precioMaximo = Math.max(meta.basePrice * 25, meta.basePrice + 1);
+        newPrice = Math.max(precioMinimo, Math.min(precioMaximo, newPrice));
         preciosMercado[emp] = newPrice;
+
         let pctChange = ((newPrice - oldPrice) / oldPrice) * 100;
         meta.historial.push(pctChange);
-        if (meta.historial.length > 5) meta.historial.shift();
+        if (meta.historial.length > 30) meta.historial.shift();
+
+        meta.recuperacion = Math.abs(recovery) > 0.00001 ? recovery * 0.9 : 0;
+
         let safeId = obtenerIdSeguro(emp);
         let priceEl = document.getElementById(`price-${safeId}`);
         if (priceEl) {
@@ -5540,6 +7035,256 @@ function renderAsesores() {
 // ==========================================
 // PREDICCIONES POR EMPRESA (NO CATEGORIA)
 // ==========================================
+function analizarPrediccionLocal(asesor, empresa) {
+    const meta = empresaMeta[empresa];
+    if (!meta) return { tipo: 'subida', confianza: 50, riesgo: 'medio', razon: 'No hay suficiente contexto para analizar esa empresa.', senal: 0 };
+
+    const historial = meta?.historial || [];
+    const tendenciaCorta = historial.slice(-3).reduce((total, cambio) => total + cambio, 0) / Math.max(1, Math.min(3, historial.length));
+    const tendenciaMedia = historial.slice(-7).reduce((total, cambio) => total + cambio, 0) / Math.max(1, Math.min(7, historial.length));
+    const tendenciaLarga = historial.slice(-12).reduce((total, cambio) => total + cambio, 0) / Math.max(1, Math.min(12, historial.length));
+    const evento = eventosEmpresaActivos[empresa];
+    const impactoEvento = Number(evento?.impacto || 0) * 100;
+    const noticiasEmpresa = noticiasHistorial.filter(noticia => noticia.empresa === empresa).slice(0, 5);
+    const impactoNoticias = noticiasEmpresa.reduce((total, noticia) => total + Number(noticia.impacto || 0) * 100, 0);
+    const mercado = Number(mercadoGlobal.fuerza || 0) * 100;
+    const sector = meta?.sector || '';
+    const especialidad = String(asesor.especialidad || '').toLowerCase();
+    const sectorLower = sector.toLowerCase();
+    const mapEspecialidad = {
+        'valor': ['finanzas', 'salud', 'consumo', 'energia'],
+        'tecnico': ['tecnologia', 'fintech', 'ia', 'gaming'],
+        'macro': ['finanzas', 'energia', 'consumo', 'logistica'],
+        'day trading': ['tecnologia', 'criptomonedas', 'fintech', 'gaming'],
+        'cripto': ['criptomonedas', 'fintech', 'tecnologia'],
+        'energia': ['energia', 'agricultura', 'quimica', 'logistica'],
+        'salud': ['salud', 'biotecnologia', 'farmaceutica'],
+        'ia': ['tecnologia', 'ia', 'fintech', 'gaming'],
+        'dividendos': ['finanzas', 'consumo', 'salud'],
+        'defensivo': ['finanzas', 'salud', 'consumo'],
+        'legendario': ['finanzas', 'tecnologia', 'energia', 'salud'],
+        'oraculo': ['finanzas', 'energia', 'tecnologia', 'salud'],
+        'angel': ['finanzas', 'salud', 'consumo'],
+        'quant': ['tecnologia', 'finanzas', 'ia', 'criptomonedas'],
+        'insider': ['tecnologia', 'finanzas', 'salud', 'energia'],
+        'principiante': ['finanzas', 'consumo', 'tecnologia'],
+        'oro': ['agricultura', 'energia', 'quimica']
+    };
+
+    const coincideEspecialidad = especialidad && (
+        mapEspecialidad[especialidad]?.some(token => sectorLower.includes(token)) ||
+        sectorLower.includes(especialidad) ||
+        (especialidad === 'tecnico' && tendenciaCorta !== 0) ||
+        (especialidad === 'valor' && meta?.basePrice > 0) ||
+        (especialidad === 'macro' && mercado !== 0) ||
+        (especialidad === 'cripto' && sectorLower.includes('criptomonedas'))
+    );
+
+    const pesoEspecialidad = coincideEspecialidad ? 0.16 : 0;
+    const sesgoSector = meta?.sector ? (sectorLower.includes('tecnologia') || sectorLower.includes('ia') ? 0.08 : sectorLower.includes('energia') ? 0.06 : sectorLower.includes('salud') ? 0.05 : 0.025) : 0;
+    const riesgoVolatilidad = Math.min(0.18, (meta?.vol || 0.02) * 2.5);
+    const senal = Math.max(-1, Math.min(1,
+        (tendenciaCorta * 0.045) +
+        (tendenciaMedia * 0.025) +
+        (tendenciaLarga * 0.012) +
+        (impactoEvento * 0.014) +
+        (impactoNoticias * 0.01) +
+        (mercado * 0.012) +
+        (sesgoSector * (tendenciaCorta >= 0 ? 1 : -1)) +
+        (pesoEspecialidad * (tendenciaCorta >= 0 ? 1 : -1)) -
+        (riesgoVolatilidad * (tendenciaCorta >= 0 ? 0.2 : -0.2))
+    ));
+
+    const tipo = senal >= 0.09 ? 'subida' : senal <= -0.09 ? 'bajada' : (tendenciaCorta >= 0 ? 'subida' : 'bajada');
+    const confianza = Math.round(Math.min(98, 42 + Math.abs(senal) * 48 + (coincideEspecialidad ? 12 : 0) + (evento ? 8 : 0) + (noticiasEmpresa.length ? 6 : 0)));
+    const riesgo = Math.abs(senal) > 0.58 || (meta?.vol || 0) > 0.08 ? 'alto' : Math.abs(senal) > 0.26 ? 'medio' : 'bajo';
+
+    let razon = tipo === 'subida'
+        ? 'La combinación de tendencia, fuerza del mercado y contexto sectorial favorece un impulso alcista en esta empresa.'
+        : 'La tendencia reciente, la presión del mercado y el riesgo sectorial apuntan a un movimiento bajista más probable.';
+
+    if (evento) {
+        razon = evento.impacto >= 0
+            ? `Un evento positivo está reforzando la narrativa de ${empresa} con impacto directo sobre sus resultados y su flujo de caja.`
+            : `Un evento negativo está generando preocupación en el mercado y presionando la valoración de ${empresa}.`;
+    } else if (noticiasEmpresa.length) {
+        razon = `Las noticias recientes sobre ${empresa} están reforzando la reacción del mercado y amplificando la señal de ${tipo}.`;
+    } else if (coincideEspecialidad) {
+        razon = `${asesor.especialidad} detecta una señal coherente con su especialidad y con el comportamiento reciente del sector.`;
+    }
+
+    return { tipo, confianza, riesgo, razon, senal: Number(senal.toFixed(4)) };
+}
+
+function promptIAAsesor(input) {
+    return `
+Eres un asesor de inversiones dentro de un videojuego de simulacion. Analiza los datos recibidos, no inventes datos y no ejecutes ninguna operacion.
+Responde SOLO con JSON valido, sin markdown, usando exactamente estas claves:
+{"accion":"comprar|vender|mantener|esperar","empresa":"string","confianza":0,"riesgo":"bajo|medio|alto","razon":"string breve","horizonte":"corto plazo|mediano plazo|largo plazo"}
+La recomendacion es orientativa y debe reconocer la incertidumbre.
+Datos:
+${JSON.stringify(input)}
+`;
+}
+
+function parseJsonIARespuesta(texto, proveedor, empresaEsperada) {
+    const raw = String(texto || '').replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (error) {
+        throw new Error(`Respuesta no es JSON valido (${proveedor})`);
+    }
+
+    const acciones = new Set(['comprar', 'vender', 'mantener', 'esperar']);
+    const riesgos = new Set(['bajo', 'medio', 'alto']);
+    if (!acciones.has(parsed.accion) || !riesgos.has(parsed.riesgo) || String(parsed.empresa || '') !== empresaEsperada) {
+        throw new Error(`Respuesta de IA fuera del contrato (${proveedor})`);
+    }
+
+    return {
+        proveedor,
+        accion: parsed.accion,
+        empresa: empresaEsperada,
+        confianza: Math.max(0, Math.min(100, Number(parsed.confianza) || 0)),
+        riesgo: parsed.riesgo,
+        razon: String(parsed.razon || 'Sin razon disponible').slice(0, 300),
+        horizonte: String(parsed.horizonte || 'corto plazo')
+    };
+}
+
+async function consultarProveedorIA(proveedor, payload, prompt) {
+    const backendUrl = window.IA_BACKEND_URL;
+    if (!backendUrl) {
+        throw new Error('Sin backend configurado; usando analisis local');
+    }
+
+    const response = await fetch(backendUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Backend IA no responde: ${response.status} ${text.slice(0, 200)}`);
+    }
+
+    const data = await response.json();
+    if (!data || !data.empresa) {
+        throw new Error('Respuesta del backend IA invalida');
+    }
+
+    return data;
+}
+
+function fallbackAnalisisIAAsesor(prediccion, asesor) {
+    const meta = empresaMeta[prediccion.target];
+    if (!meta) return { proveedor: 'local', accion: 'mantener', empresa: prediccion.target, confianza: 50, riesgo: 'medio', razon: 'No hay contexto suficiente para generar una recomendación.', horizonte: 'corto plazo' };
+
+    const historial = meta?.historial || [];
+    const tendenciaCorta = historial.slice(-5).reduce((total, value) => total + value, 0) / Math.max(1, Math.min(5, historial.length));
+    const tendenciaMedia = historial.slice(-12).reduce((total, value) => total + value, 0) / Math.max(1, Math.min(12, historial.length));
+    const evento = eventosEmpresaActivos[prediccion.target];
+    const impactoEvento = Number(evento?.impacto || 0) * 100;
+    const noticiasEmpresa = noticiasHistorial.filter(noticia => noticia.empresa === prediccion.target).slice(0, 3);
+    const impactoNoticias = noticiasEmpresa.reduce((total, noticia) => total + Number(noticia.impacto || 0) * 100, 0);
+    const mercado = Number(mercadoGlobal.fuerza || 0) * 100;
+    const sector = meta?.sector || '';
+    const especialidad = String(asesor.especialidad || '').toLowerCase();
+    const sectorLower = sector.toLowerCase();
+    const matchEspecialidad = especialidad && (
+        sectorLower.includes(especialidad) ||
+        (especialidad === 'tecnico' && tendenciaCorta !== 0) ||
+        (especialidad === 'valor' && meta?.basePrice > 0) ||
+        (especialidad === 'macro' && mercado !== 0) ||
+        (especialidad === 'cripto' && sectorLower.includes('criptomonedas'))
+    );
+
+    const fuerza =
+        (tendenciaCorta * 0.95) +
+        (tendenciaMedia * 0.55) +
+        (impactoEvento * 0.6) +
+        (impactoNoticias * 0.45) +
+        (mercado * 0.4) +
+        (matchEspecialidad ? 0.18 : 0) +
+        (sectorLower.includes('tecnologia') ? 0.08 : 0) +
+        (sectorLower.includes('energia') ? 0.06 : 0) +
+        (sectorLower.includes('salud') ? 0.05 : 0);
+
+    let accion = 'mantener';
+    if (fuerza > 0.32) accion = 'comprar';
+    else if (fuerza < -0.32) accion = 'vender';
+    else if (fuerza > 0.08) accion = 'esperar';
+    else if (fuerza < -0.08) accion = 'mantener';
+
+    const riesgo = Math.abs(fuerza) > 0.7 || (meta?.vol || 0) > 0.09 ? 'alto' : Math.abs(fuerza) > 0.28 ? 'medio' : 'bajo';
+    const confianza = Math.max(35, Math.min(96, Math.round(52 + Math.abs(fuerza) * 42 + (matchEspecialidad ? 12 : 0) + (evento ? 8 : 0) + (noticiasEmpresa.length ? 6 : 0))));
+
+    let razon = 'La señal es moderada y aún requiere confirmación antes de actuar con convicción.';
+    if (evento) {
+        razon = evento.impacto >= 0
+            ? 'El evento positivo está fortaleciendo la estructura del valor y la confianza del mercado.'
+            : 'El evento negativo está elevando el riesgo y ejerciendo presión sobre la valoración.';
+    } else if (noticiasEmpresa.length) {
+        razon = 'Las noticias recientes están reforzando la percepción del mercado y reduciendo la neutralidad del valor.';
+    } else if (matchEspecialidad) {
+        razon = `${asesor.especialidad} identifica un patrón coherente con la tendencia y la especialidad del sector.`;
+    }
+
+    if (accion === 'comprar') {
+        razon = 'La tendencia, la fuerza del mercado y el contexto sectorial favorecen una entrada prudente en la empresa.';
+    } else if (accion === 'vender') {
+        razon = 'Los indicadores apuntan a pérdida de impulso o presión negativa, por lo que conviene replegar la posición.';
+    } else if (accion === 'esperar') {
+        razon = 'Hay un impulso claro, pero aún falta confirmación para comprometerse con un tamaño mayor.';
+    } else if (accion === 'mantener') {
+        razon = 'La señal es neutral y la prudencia sigue siendo la mejor respuesta ante la incertidumbre.';
+    }
+
+    return {
+        proveedor: 'local',
+        accion,
+        empresa: prediccion.target,
+        confianza,
+        riesgo,
+        razon: razon.slice(0, 300),
+        horizonte: Math.abs(fuerza) > 0.5 ? 'corto plazo' : 'mediano plazo'
+    };
+}
+
+async function solicitarAnalisisAsesorIA(prediccion, asesor) {
+    const meta = empresaMeta[prediccion.target];
+    if (!meta) return;
+
+    const historial = meta.historial || [];
+    const payload = {
+        tipo: 'asesor',
+        asesor: { nombre: asesor.nombre, especialidad: asesor.especialidad, nivel: asesoresEstado[asesor.id]?.nivel || 1, precision: getPrecision(asesor.id, asesoresEstado[asesor.id]?.nivel || 1) },
+        mercado: { empresa: prediccion.target, sector: prediccion.sector, precio: preciosMercado[prediccion.target], tendencia: historial.slice(-5).reduce((total, value) => total + value, 0) / Math.max(1, Math.min(5, historial.length)), volatilidad: meta.vol },
+        noticias: noticiasHistorial.filter(noticia => noticia.empresa === prediccion.target).slice(0, 3).map(noticia => noticia.titulo),
+        portafolio: { capital, posicion: portafolio[prediccion.target] || null }
+    };
+
+    if (window.IA_BACKEND_URL) {
+        try {
+            const analisis = await consultarProveedorIA('backend', payload, promptIAAsesor(payload));
+            if (prediccion.resultado === 'pendiente' && analisis.empresa === prediccion.target) {
+                prediccion.analisisIA = analisis;
+                renderPredicciones();
+            }
+            return;
+        } catch (error) {
+            console.warn('Backend IA no disponible, usando analisis local:', error);
+        }
+    }
+
+    if (prediccion.resultado === 'pendiente') {
+        prediccion.analisisIA = fallbackAnalisisIAAsesor(prediccion, asesor);
+        renderPredicciones();
+    }
+}
+
 function generarPredicciones() {
     ASESORES_DEF.forEach(a => {
         let est = asesoresEstado[a.id];
@@ -5552,8 +7297,7 @@ function generarPredicciones() {
         if (yaActiva) return;
         est.ultimaPrediccion = ahora;
         
-        // Seleccionar empresa ALEATORIA del mercado (respetando bloqueos de nivel)
-        let tipo = Math.random() > 0.5 ? 'subida' : 'bajada';
+        // Seleccionar empresa del mercado respetando los bloqueos de nivel.
         let empresasDisp = TODAS_EMPRESAS.filter(e => {
             let sector = empresaMeta[e]?.sector;
             if (!sector || !CATEGORIAS[sector]) return false;
@@ -5591,10 +7335,12 @@ function generarPredicciones() {
                 sectorEmp = 'IA';
             }
         }
+            const analisisLocal = analizarPrediccionLocal(a, empresaTarget);
+            const tipo = analisisLocal.tipo;
                 let predId = 'pred_'+Date.now()+'_'+a.id;
         let duracionPred = 30 + (habilidadesDesbloqueadas["h7"] || 0) * 3; // Vision Futura aumenta duracion
         
-        prediccionesActivas.push({
+        const prediccion = {
             id: predId,
             asesorId: a.id,
             tipo: tipo,
@@ -5603,8 +7349,12 @@ function generarPredicciones() {
             tiempoRestante: duracionPred,
             duracion: duracionPred,
             resultado: 'pendiente',
-            preAvisoEnviado: false
-        });
+            preAvisoEnviado: false,
+            analisisLocal,
+            analisisIA: null
+        };
+        prediccionesActivas.push(prediccion);
+        solicitarAnalisisAsesorIA(prediccion, a);
         toast(`🔮 ${a.nombre} predice ${tipo} en ${empresaTarget} (${sectorEmp})`, "info");
         renderPredicciones();
     });
@@ -5678,6 +7428,8 @@ function renderPredicciones() {
         let clase = p.resultado === 'acierto' ? 'prediccion-acierto' : p.resultado === 'fallo' ? 'prediccion-fallo' : '';
         let icon = p.resultado === 'acierto' ? '✅' : p.resultado === 'fallo' ? '❌' : '🔮';
         let status = p.resultado === 'pendiente' ? (p.tiempoRestante <= 20 ? `⏳ Se cumple en ${p.tiempoRestante}s` : `⏱️ ${p.tiempoRestante}s`) : p.resultado === 'acierto' ? '✅ ACIERTO' : '❌ FALLO';
+        let analisis = p.analisisIA || p.analisisLocal;
+        let detalleAnalisis = analisis ? `<div style="color:#999;font-size:0.75em;margin-top:5px;">${analisis.razon} <span style="color:#777;">Confianza ${analisis.confianza}% · Riesgo ${analisis.riesgo}${analisis.proveedor ? ` · ${analisis.proveedor}` : ' · local'}</span></div>` : '';
         let div = document.createElement("div");
         div.className = "prediccion-card " + clase;
         div.innerHTML = `
@@ -5685,6 +7437,7 @@ function renderPredicciones() {
             <div class="prediccion-info">
                 <div class="prediccion-title">${a.nombre} (Nv.${est.nivel}) • ${p.target}</div>
                 <div class="prediccion-desc">Predice <b>${p.tipo.toUpperCase()}</b> en <b>${p.target}</b> <span style="color:#666">(${p.sector})</span></div>
+                ${detalleAnalisis}
                 <div class="prediccion-timer">${status}</div>
             </div>`;
         cont.appendChild(div);

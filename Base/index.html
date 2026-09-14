@@ -30,7 +30,6 @@
     window.PAYPAL_CURRENCY = 'USD';
 </script>
 <link rel="stylesheet" href="css/styles.css?v=26">
-<base target="_blank">
 </head>
 <body>
 
@@ -340,7 +339,12 @@
 
 <div class="container">
     <div class="sidebar">
-        <div style="font-size: 0.75em; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; padding-left: 6px;">Menu Principal</div>
+        <div class="sidebar-heading">
+            <div style="font-size: 0.75em; color: #555; text-transform: uppercase; letter-spacing: 1px; padding-left: 6px;">Menu Principal</div>
+            <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Abrir menú principal" aria-controls="sidebarMenu" aria-expanded="false" onclick="toggleSidebarMenu(event)">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
         <div id="sidebarMenu"></div>
 
         <div class="xp-bar-container">
@@ -825,9 +829,9 @@
     </div>
 </div>
 
-    <script defer src="js/services/db.js?v=68"></script>
-    <script defer src="js/data/gameData.js"></script>
-    <script defer src="js/core/app.js?v=115"></script>
+    <script defer src="js/services/db.js?v=69"></script>
+    <script defer src="js/data/gameData.js?v=69"></script>
+    <script defer src="js/core/app.js?v=117"></script>
     <script>
         window.addEventListener('load', () => {
             const tieneCallbackOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');

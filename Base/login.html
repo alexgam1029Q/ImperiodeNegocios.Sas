@@ -21,7 +21,9 @@
     <div class="login-box">
         <h1 style="color: var(--primary); font-size: 22px; letter-spacing: 2px; margin: 0 0 25px; text-align: center; text-shadow: 0 0 10px var(--primary);">INICIAR SESIÓN</h1>
         <form id="loginForm">
+            <label class="sr-only" for="loginUsername">Usuario</label>
             <input type="text" id="loginUsername" placeholder="Usuario" autocomplete="username" maxlength="20" required>
+            <label class="sr-only" for="loginPassword">Contraseña</label>
             <input type="password" id="loginPassword" placeholder="Contraseña" autocomplete="current-password" required>
             <button type="submit">Iniciar sesión</button>
         </form>

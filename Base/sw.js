@@ -1,7 +1,9 @@
-const CACHE_NAME = 'imperio-shell-v80';
+const CACHE_NAME = 'imperio-shell-v82';
 const APP_SHELL = [
     './',
     './index.html',
+    './login.html',
+    './registro.html',
     './css/styles.css',
     './js/services/db.js',
     './js/data/gameData.js',

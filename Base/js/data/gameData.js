@@ -334,6 +334,26 @@ const CATEGORIAS = {
         ]
     }
 };
+const EMPRESAS_REPETIDAS_REEMPLAZADAS = new Set();
+const nombresEmpresasUsados = new Set();
+Object.entries(CATEGORIAS).forEach(([sector, datos]) => {
+    datos.empresas.forEach(empresa => {
+        const nombreOriginal = empresa.n;
+        if (!nombresEmpresasUsados.has(nombreOriginal)) {
+            nombresEmpresasUsados.add(nombreOriginal);
+            return;
+        }
+        let indice = 2;
+        let nombreNuevo = `${nombreOriginal} ${sector}`;
+        while (nombresEmpresasUsados.has(nombreNuevo)) {
+            indice += 1;
+            nombreNuevo = `${nombreOriginal} ${sector} ${indice}`;
+        }
+        empresa.n = nombreNuevo;
+        EMPRESAS_REPETIDAS_REEMPLAZADAS.add(`${nombreOriginal} -> ${nombreNuevo}`);
+        nombresEmpresasUsados.add(nombreNuevo);
+    });
+});
 
 const bancosDefault = [
     { nombre: "Davivienda", ahorro: 12500000, corriente: 3200000, tarjeta: { usado: 1320000, tasa: 0.035, bloqueada: false } },
