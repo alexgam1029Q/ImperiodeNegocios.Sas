@@ -5018,7 +5018,7 @@ function getImagenNoticia(emp) {
 }
 
 cargarNoticiasLocales();
-setInterval(() => { if(usuarioActual) generarNoticia(); }, 10000);
+setInterval(() => { if(usuarioActual) generarNoticia(); }, 15000);
 
 // ==========================================
 // DIVIDENDOS PASIVOS
