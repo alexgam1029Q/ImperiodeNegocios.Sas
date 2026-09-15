@@ -135,7 +135,9 @@ Para enviar dinero, indica el usuario, ID público o número de tarjeta del dest
 
 En **Amigos** puedes buscar jugadores por nombre o ID público, consultar perfiles públicos, enviar y aceptar solicitudes de amistad y consultar tu lista de amigos.
 
-También puedes proponer inversiones cooperativas indicando la empresa y el monto de aporte.
+También puedes abrir un chat privado con cada amigo desde el mismo listado, enviar mensajes y mantener conversaciones que se sincronizan en segundo plano.
+
+Desde la misma sección puedes gestionar proyectos cooperativos: aceptar inversiones, rechazarlas, venderlas o limpiar pendientes. Las propuestas se elaboran con una empresa y un monto de aporte concreto.
 
 ## 16. Ranking
 

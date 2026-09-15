@@ -69,7 +69,10 @@ Las cifras incluyen los archivos fuente y de configuración del proyecto, pero e
 * Inicio de sesión con Google OAuth, con selección inicial de nombre de usuario.
 * Ranking público de jugadores por ganancias de operaciones y dividendos acumulados.
 * ID público secuencial para encontrar perfiles sin compartir el correo.
+* Sistema social con búsqueda, solicitudes de amistad, lista de amigos y perfiles públicos.
+* Chat de amigos emergente con mensajes sincronizados en segundo plano.
 * Propuestas de inversión cooperativa entre amigos con aporte y participación.
+* Panel de proyectos cooperativos para aceptar, rechazar, vender o limpiar inversiones pendientes.
 * Migración preparada para billeteras, transacciones y amistades protegidas con RLS.
 * Panel de control con resumen financiero.
 * Sistema de inversiones.

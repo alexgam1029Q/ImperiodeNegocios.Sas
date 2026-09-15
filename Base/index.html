@@ -332,7 +332,11 @@
             </div>
         </div>
         <div style="font-size: 1.1em;">⭐ Nivel <span id="nivelHeader" style="color: var(--primary); font-weight: 800;">1</span></div>
+        <button id="headerMenuToggle" class="header-menu-toggle" type="button" aria-label="Abrir menú principal" aria-controls="sidebarMenu" aria-expanded="false" onclick="toggleSidebarMenu(event)">
+            <span></span><span></span><span></span>
+        </button>
         <button class="header-btn" onclick="abrirAjustes()">⚙️ Ajustes</button>
+        <button id="toggleNotificacionesEmergentesHeaderBtn" class="header-btn" type="button" onclick="toggleNotificacionesEmergentes()">🔔 Desactivar</button>
         <div style="font-size: 0.9em; color: #666; display:none;" id="eventoActivoBadge"></div>
     </div>
 </header>
@@ -341,9 +345,6 @@
     <div class="sidebar">
         <div class="sidebar-heading">
             <div style="font-size: 0.75em; color: #555; text-transform: uppercase; letter-spacing: 1px; padding-left: 6px;">Menu Principal</div>
-            <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Abrir menú principal" aria-controls="sidebarMenu" aria-expanded="false" onclick="toggleSidebarMenu(event)">
-                <span></span><span></span><span></span>
-            </button>
         </div>
         <div id="sidebarMenu"></div>
 
@@ -669,21 +670,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="bank-sidebar-space">
-                    <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; padding: 24px; text-align:center; color:#ddd;">
-                        <h4 style="color: var(--primary); margin-bottom: 12px;">Panel disponible pronto</h4>
-                        <p style="margin:0; font-size:0.95em; line-height:1.6; max-width: 280px;">Esta sección no está disponible por ahora. Estamos trabajando para habilitarla pronto.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div class="card bank-history-card">
+                <div class="bank-history-header">
                     <div>
                         <h3 style="color: var(--primary); margin:0;">Historial Bancario</h3>
                         <p style="color:#888; margin:6px 0 0;">Movimientos recientes de tus cuentas y créditos.</p>
                     </div>
                 </div>
-                <div style="max-height:300px; overflow-y:auto;">
+                <div class="bank-history-table-wrap">
                     <table style="width:100%; font-size:0.9em;">
                         <thead>
                             <tr>
@@ -697,6 +691,10 @@
                     </table>
                 </div>
             </div>
+            </div>
+            <section class="credit-section" aria-labelledby="creditModuleTitle">
+                <div id="creditModuleContainer"></div>
+            </section>
         </div>
 
         <!-- APRENDIZAJE / WIKI -->
@@ -746,12 +744,15 @@
         </div>
 
         <div id="amigos" class="hidden">
-            <div class="card social-card">
+            <div class="card social-card social-hero">
                 <div class="ranking-header">
-                    <h3 style="color: var(--primary); margin-top: 0;">👥 Amigos e inversiones cooperativas</h3>
+                    <div>
+                        <span class="social-kicker">RED DE NEGOCIOS</span>
+                        <h2 style="color: var(--primary); margin: 4px 0 0;">👥 Amigos</h2>
+                        <p class="ranking-intro">Encuentra jugadores, conversa y construye inversiones cooperativas.</p>
+                    </div>
                     <button id="socialRefreshButton" class="ranking-refresh-btn" type="button" onclick="actualizarAmigos()" aria-label="Actualizar amigos">↻ Actualizar</button>
                 </div>
-                <p class="ranking-intro">Busca por nombre o ID público para inspeccionar perfiles y colaborar.</p>
                 <div class="social-search-row">
                     <input id="socialSearchInput" type="search" placeholder="Nombre o ID público" autocomplete="off" onkeydown="if(event.key==='Enter') buscarPerfilSocial()">
                     <button type="button" class="ranking-refresh-btn" onclick="buscarPerfilSocial()">Buscar</button>
@@ -760,20 +761,63 @@
                 <div id="socialStatus" class="ranking-status" aria-live="polite"></div>
                 <div id="socialProfileResult"></div>
             </div>
-            <div class="card social-card">
+            <div class="social-layout-grid">
+            <div class="card social-card social-panel social-requests-panel">
                 <h3 style="color: var(--primary); margin-top: 0;">Solicitudes de amistad</h3>
                 <div id="socialRequestsList" class="social-list"></div>
             </div>
-            <div class="card social-card">
-                <h3 style="color: var(--primary); margin-top: 0;">Mis amigos</h3>
-                <div id="socialFriendsList" class="social-list"></div>
-            </div>
-            <div class="card social-card">
+            <div class="card social-card social-panel social-cooperative-panel">
                 <div class="ranking-header">
                     <h3 style="color: var(--primary); margin-top: 0;">Proyectos cooperativos</h3>
                     <button id="clearCooperativeProjectsButton" class="ranking-refresh-btn" type="button" onclick="limpiarProyectosCooperativos()">Limpiar pendientes</button>
                 </div>
                 <div id="cooperativeProjectsList" class="social-list"></div>
+            </div>
+            <div class="card social-card social-panel social-friends-panel">
+                <h3 style="color: var(--primary); margin-top: 0;">Mis amigos</h3>
+                <div id="socialFriendsList" class="social-list"></div>
+            </div>
+            </div>
+            <div id="socialChatPanel" class="social-chat-panel hidden">
+                <div id="socialChatHeader" class="social-chat-header"></div>
+                <div id="socialChatMessages" class="social-chat-messages" aria-live="polite"></div>
+                <div id="socialChatEmpty" class="social-empty hidden">Selecciona “Chat” junto a un amigo para comenzar.</div>
+                <form id="socialChatForm" class="social-chat-form">
+                    <label class="sr-only" for="socialChatInput">Mensaje</label>
+                    <input id="socialChatInput" type="text" maxlength="240" autocomplete="off" placeholder="Escribe un mensaje...">
+                    <button type="submit" class="ranking-refresh-btn">Enviar</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="notificaciones" class="hidden">
+            <div class="card notification-center">
+                <div class="ranking-header">
+                    <div>
+                        <span class="notification-kicker">CENTRO DE ACTIVIDAD</span>
+                        <h2 style="color: var(--primary); margin: 4px 0 0;">🔔 Notificaciones</h2>
+                        <p class="ranking-intro">Todos tus eventos, operaciones y novedades en un solo lugar.</p>
+                    </div>
+                    <div class="notification-toolbar">
+                        <button type="button" class="ranking-refresh-btn" onclick="actualizarNotificaciones()">Actualizar</button>
+                        <div class="notification-toggle-wrap">
+                            <button id="toggleNotificacionesEmergentesBtn" type="button" class="ranking-refresh-btn" onclick="toggleNotificacionesEmergentes()">Ocultar</button>
+                            <small class="notification-toggle-help">Muestra u oculta emergentes.</small>
+                        </div>
+                        <button type="button" class="ranking-refresh-btn" onclick="marcarNotificacionesLeidas()">Marcar como leídas</button>
+                    </div>
+                </div>
+                <div class="notification-filters" role="group" aria-label="Filtrar notificaciones">
+                    <button type="button" class="notification-filter active" data-notification-filter="todos" onclick="filtrarNotificaciones('todos')">Todo</button>
+                    <button type="button" class="notification-filter" data-notification-filter="eventos" onclick="filtrarNotificaciones('eventos')">Eventos</button>
+                    <button type="button" class="notification-filter" data-notification-filter="asesores" onclick="filtrarNotificaciones('asesores')">Asesores</button>
+                    <button type="button" class="notification-filter" data-notification-filter="noticias" onclick="filtrarNotificaciones('noticias')">Noticias</button>
+                    <button type="button" class="notification-filter" data-notification-filter="bancos" onclick="filtrarNotificaciones('bancos')">Bancos</button>
+                    <button type="button" class="notification-filter" data-notification-filter="amigos" onclick="filtrarNotificaciones('amigos')">Amigos</button>
+                    <button type="button" class="notification-filter" data-notification-filter="sistema" onclick="filtrarNotificaciones('sistema')">Sistema</button>
+                </div>
+                <div id="notificationsUnread" class="notification-unread" aria-live="polite"></div>
+                <div id="notificationsList" class="notifications-list"></div>
             </div>
         </div>
 
@@ -831,6 +875,7 @@
 
     <script defer src="js/services/db.js?v=69"></script>
     <script defer src="js/data/gameData.js?v=69"></script>
+    <script defer src="js/core/eventEngine.js?v=1"></script>
     <script defer src="js/core/app.js?v=117"></script>
     <script>
         window.addEventListener('load', () => {

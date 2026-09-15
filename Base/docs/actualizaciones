@@ -1,5 +1,14 @@
 # Actualizaciones recientes
 
+## 14 de septiembre de 2026
+
+- Se reorganizó la sección de Amigos para combinar búsquedas, solicitudes, lista de amigos, chat y proyectos cooperativos en un mismo flujo social.
+- El chat de amigos quedó como ventana emergente flotante para evitar solapamientos y mejorar la experiencia móvil.
+- Los proyectos cooperativos se integraron al panel social sin romper la estructura principal del juego.
+- Se reforzó la actualización automática de perfiles y mensajes sociales para mantener la conversación sincronizada aunque la sección no esté abierta.
+- Se ajustó la distribución visual del panel social para mejorar el espacio, alinear rápidamente la información y evitar superposiciones.
+- Se corrigieron detalles de altura, padding y layout en móviles para que el chat y los paneles no se fusionen.
+
 ## 24 de agosto de 2026
 
 - Se eliminó el QR duplicado no utilizado.

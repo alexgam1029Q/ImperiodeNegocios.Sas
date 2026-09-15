@@ -17,6 +17,9 @@ let eventosEmpresaActivos = {};
 // Estado del juego
 let capital = 10000, deuda = 0, gananciasTotal = 0, perdidasTotal = 0;
 let xp = 0, nivel = 1, totalInv = 0, dividendosTotal = 0;
+let scoreCrediticio = 680;
+let reputacion = 50;
+let eventosReputacion = [];
 let usuarioActual = "";
 let correoActual = "";
 let idPublico = "";
@@ -26,6 +29,15 @@ let googleUsernameElegido = false;
 let usernameElegido = false;
 let registroEnCurso = false;
 let amigos = [];
+let friendChats = {};
+let friendChatMeta = {};
+let activeFriendChat = '';
+let lastChatSentAt = 0;
+let socialProfilesCache = new Map();
+let notificationFilter = 'todos';
+let notificationsReadAt = 0;
+let notificacionesEmergentesActivas = true;
+let historialSistema = [];
 let solicitudesAmistad = [];
 let proyectosCooperativos = [];
 const FOTOS_PERFIL_PREDETERMINADAS = Array.from({ length: 10 }, (_, index) => `assets/perfiles/perfil-${String(index + 1).padStart(2, '0')}.png?v=1`);
@@ -168,6 +180,13 @@ let tarjetaGlobal = JSON.parse(JSON.stringify(tarjetaDefault));
 let tarjetaSaldoVisible = false;
 let historialGlobal = [];
 let historialBancario = [];
+let creditBankSelected = 'bancolombia';
+let creditTypeSelected = 'expansion';
+let creditLoanDraft = { principal: 350000, plazo: 120, bankId: 'bancolombia', typeId: 'expansion' };
+let creditLoans = [];
+let creditOfferIndex = 0;
+let creditPanelMode = 'offer';
+let creditPanelOpen = false;
 let bancos = JSON.parse(JSON.stringify(bancosDefault));
 let ultimoAvisoMisiones = 0;
 let alertaMisionesMostrada = false;
@@ -180,10 +199,487 @@ function renderSidebarMenu() {
     `).join('');
 }
 
+function getCreditBankById(bankId) {
+    return (CREDIT_BANKS || []).find(bank => bank.id === bankId) || (CREDIT_BANKS || [])[0];
+}
+
+const CREDIT_BANK_DOMAINS = {
+    jpmorgan: 'jpmorganchase.com',
+    bankofamerica: 'bankofamerica.com',
+    wellsfargo: 'wellsfargo.com',
+    citibank: 'citi.com',
+    goldman: 'goldmansachs.com',
+    morganstanley: 'morganstanley.com',
+    hsbc: 'hsbc.com',
+    barclays: 'barclays.com',
+    santander: 'santander.com',
+    bbva: 'bbva.com',
+    bnpparibas: 'group.bnpparibas',
+    deutsche: 'db.com',
+    ubs: 'ubs.com',
+    creditsuisse: 'credit-suisse.com',
+    ing: 'ing.com',
+    scotiabank: 'scotiabank.com',
+    itau: 'itau.com',
+    bancodebogota: 'bancodebogota.com',
+    bancolombia: 'bancolombia.com',
+    davivienda: 'davivienda.com'
+};
+
+function getCreditBankLogo(bank) {
+    const domain = CREDIT_BANK_DOMAINS[bank?.id];
+    return domain && LOGO_DEV_TOKEN
+        ? `https://img.logo.dev/${domain}?token=${encodeURIComponent(LOGO_DEV_TOKEN)}&size=128`
+        : '';
+}
+
+function renderCreditBankLogo(bank) {
+    const logo = getCreditBankLogo(bank);
+    return logo
+        ? `<img class="bank-logo" src="${logo}" alt="Logo de ${bank.nombre}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="bank-logo-fallback" style="--bank-color:${bank.color}" aria-hidden="true" hidden>${bank.icono}</span>`
+        : `<span class="bank-logo-fallback" style="--bank-color:${bank.color}" aria-hidden="true">${bank.icono}</span>`;
+}
+
+function getCreditTypeById(typeId) {
+    return (CREDIT_TYPES || []).find(type => type.id === typeId) || (CREDIT_TYPES || [])[0];
+}
+
+function getCreditPlayerSnapshot() {
+    const valorActivos = Object.keys(portafolio).reduce((total, empresa) => total + (portafolio[empresa].cant * preciosMercado[empresa]), 0);
+    const patrimonio = Math.max(0, getCapitalConTarjeta() + valorActivos - deuda);
+    const deudaActual = Number(deuda || 0);
+    const score = Number(scoreCrediticio || 680);
+    const rep = Number(reputacion || 50);
+    return {
+        patrimonio: Number.isFinite(patrimonio) ? patrimonio : 0,
+        deudaActual,
+        score,
+        reputacion: rep,
+        capitalDisponible: Number(capital || 0),
+        riesgo: deudaActual > 0 && patrimonio > 0 ? (deudaActual / patrimonio) * 100 : 0,
+        nivelJugador: Number(nivel || 1)
+    };
+}
+
+function getCreditLimit(bank) {
+    if (!bank) return 5000;
+    const profile = getCreditPlayerSnapshot();
+    const scoreFactor = Math.max(0.7, Math.min(1.15, 0.7 + (profile.score - 300) / 2500));
+    const reputationFactor = Math.max(0.82, Math.min(1.1, 0.82 + profile.reputacion / 360));
+    const patrimonyLimit = profile.patrimonio * 0.35 * scoreFactor * reputationFactor;
+    return Math.max(5000, Math.min(bank.maximo, Math.floor(patrimonyLimit / 5000) * 5000));
+}
+
+function getActiveCreditEvents() {
+    const active = [];
+    const profile = getCreditPlayerSnapshot();
+    if (profile.riesgo > 45) active.push('📉 Riesgo crediticio elevado');
+    if (profile.reputacion >= 80) active.push('⭐ Bonificación por historial');
+    if (profile.score >= 720) active.push('🟢 Score sólido');
+    if (profile.patrimonio > 500000) active.push('💼 Patrimonio superior');
+    return active;
+}
+
+function getCreditOfferText() {
+    const offers = CREDIT_OFFERS.slice();
+    const profile = getCreditPlayerSnapshot();
+    if (profile.score >= 720) offers.unshift('🔥 Oferta exclusiva: debido a tu excelente historial de pagos, este banco te ofrece una tasa especial durante 60 segundos.');
+    if (profile.deudaActual > profile.patrimonio * 0.45) offers.unshift('⚠️ Tu nivel de deuda es elevado. Solicitar otro crédito podría aumentar considerablemente tu riesgo.');
+    if (profile.reputacion >= 85) offers.unshift('⭐ Tu reputación te abre condiciones premium en varios bancos del juego.');
+    return offers[creditOfferIndex % offers.length];
+}
+
+function buildCreditSummary(bank, loanType, principal, plazo) {
+    if (!bank || !loanType) return null;
+    const profile = getCreditPlayerSnapshot();
+    const rateBase = bank.tasa + (loanType.factor - 1) * 0.025 + (profile.riesgo > 35 ? 0.012 : 0);
+    const effectiveRate = Math.min(0.22, Math.max(0.045, rateBase * (profile.score >= 750 ? 0.9 : profile.score >= 650 ? 1 : 1.08) * (profile.reputacion >= 80 ? 0.94 : 1.04)));
+    const commission = principal * (bank.comision / 100);
+    const interest = principal * effectiveRate * (plazo / 360);
+    const total = principal + interest + commission;
+    const cuota = total / Math.max(1, plazo / 30);
+    const creditLimit = getCreditLimit(bank);
+    const approval = Math.max(12, Math.min(96, bank.aprobacion + (profile.score - 650) * 0.15 + (profile.reputacion - 50) * 0.22 - (profile.deudaActual / Math.max(1, profile.patrimonio)) * 100 + (loanType.riesgo * 10) - principal / Math.max(1, creditLimit) * 16));
+    const riesgo = Math.min(99, Math.max(10, (profile.riesgo * 0.68) + (loanType.riesgo * 18) + (bank.riesgo === 'Bajo' ? 12 : bank.riesgo === 'Medio' ? 22 : 30)));
+    return {
+        principal,
+        commission,
+        interest,
+        total,
+        cuota,
+        approval: Math.round(approval),
+        risk: Math.round(riesgo),
+        effectiveRate
+    };
+}
+
+function getCreditRecommendation() {
+    const profile = getCreditPlayerSnapshot();
+    const sorted = [...CREDIT_BANKS].sort((a, b) => a.tasa - b.tasa);
+    const bestRateBank = sorted[0];
+    const bestAmountBank = [...CREDIT_BANKS].sort((a, b) => b.maximo - a.maximo)[0];
+    const bestSpeedBank = [...CREDIT_BANKS].sort((a, b) => Number(b.aprobacion) - Number(a.aprobacion))[0];
+    const lowerRiskBank = [...CREDIT_BANKS].sort((a, b) => (a.riesgo === 'Bajo' ? 0 : 1) - (b.riesgo === 'Bajo' ? 0 : 1))[0];
+    let recommendation = 'Tu perfil favorece a bancos con buen historial y capacidad de expansión.';
+    if (profile.score >= 740 && profile.reputacion >= 80) recommendation = `Tu patrimonio es alto y tienes un excelente historial. Los bancos premium pueden ofrecerte mejores condiciones.`;
+    if (profile.deudaActual > profile.patrimonio * 0.4) recommendation = `⚠️ Tu nivel de deuda es elevado. Solicitar otro crédito podría aumentar considerablemente tu riesgo.`;
+    if (bestRateBank && bestAmountBank && bestSpeedBank && lowerRiskBank) {
+        recommendation += ` Recomendación rápida: ${bestRateBank.nombre} por tasa, ${bestAmountBank.nombre} por monto, ${bestSpeedBank.nombre} por aprobación y ${lowerRiskBank.nombre} por riesgo.`;
+    }
+    return recommendation;
+}
+
+function getCreditComparisonRows() {
+    const selectedBanks = [creditBankSelected, ...CREDIT_BANKS.filter(b => b.id !== creditBankSelected).slice(0, 2).map(b => b.id)].slice(0, 3)
+        .map(id => getCreditBankById(id)).filter(Boolean);
+    return selectedBanks;
+}
+
+function getCreditStatusLabel(status) {
+    const map = {
+        'Al día': 'status-al-dia',
+        'Próximo a vencer': 'status-proximo',
+        'Retrasado': 'status-retrasado',
+        'Renegociado': 'status-renegociado'
+    };
+    return map[status] || 'status-al-dia';
+}
+
+function refreshCreditLoanStatuses() {
+    const now = Date.now();
+    creditLoans.forEach(loan => {
+        if (loan.estado === 'Pagado') return;
+        const dueAt = Number(loan.nextPaymentAt || 0);
+        if (!dueAt) return;
+        if (now > dueAt + 30000) loan.estado = 'Retrasado';
+        else if (now > dueAt - 30000) loan.estado = 'Próximo a vencer';
+        else if (loan.estado !== 'Renegociado') loan.estado = 'Al día';
+    });
+}
+
+function formatCreditTerm(seconds) {
+    const minutes = Number(seconds) / 60;
+    return minutes >= 1 ? `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}` : `${seconds} segundos`;
+}
+
+function closeCreditPanel() {
+    creditPanelOpen = false;
+    renderCreditModule();
+}
+
+function renderCreditBankPanel(bank, type, draft, summary, comparisonRows) {
+    if (!creditPanelOpen) return '';
+    const creditLimit = getCreditLimit(bank);
+    if (creditPanelMode === 'compare') {
+        return `
+            <div class="credit-floating-backdrop" onclick="closeCreditPanel()">
+              <div class="bank-tile-panel bank-tile-compare credit-floating-menu" onclick="event.stopPropagation()">
+                <button class="credit-floating-close" type="button" onclick="closeCreditPanel()" aria-label="Cerrar">×</button>
+                <strong>Comparación desde ${bank.nombre}</strong>
+                <table class="compare-table"><tbody>
+                    ${comparisonRows.map(([label, ...values]) => `<tr><th>${label}</th>${values.map(value => `<td>${value}</td>`).join('')}</tr>`).join('')}
+                </tbody></table>
+              </div>
+            </div>`;
+    }
+    if (creditPanelMode === 'apply') {
+        return `
+            <div class="credit-floating-backdrop" onclick="closeCreditPanel()">
+              <div class="bank-tile-panel bank-tile-apply credit-floating-menu" onclick="event.stopPropagation()">
+                <button class="credit-floating-close" type="button" onclick="closeCreditPanel()" aria-label="Cerrar">×</button>
+                <strong>Solicitar en ${bank.nombre}</strong>
+                <div class="credit-form-grid">
+                    <select id="creditBankSelect" aria-label="Banco">
+                        ${CREDIT_BANKS.map(item => `<option value="${item.id}" ${item.id === bank.id ? 'selected' : ''}>${item.nombre}</option>`).join('')}
+                    </select>
+                    <select id="creditTypeSelect" aria-label="Tipo de crédito">
+                        ${CREDIT_TYPES.map(item => `<option value="${item.id}" ${item.id === type.id ? 'selected' : ''}>${item.nombre}</option>`).join('')}
+                    </select>
+                    <input id="creditAmountInput" type="number" min="5000" max="${creditLimit}" step="5000" value="${draft.principal}" placeholder="Cantidad" />
+                    <select id="creditTermSelect" aria-label="Plazo">
+                        ${[30, 60, 120, 300, 600, 900].map(value => `<option value="${value}" ${value === draft.plazo ? 'selected' : ''}>${formatCreditTerm(value)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="credit-summary-box">
+                    <div><strong>Total a devolver:</strong> ${formatD(summary?.total || draft.principal)}</div>
+                    <div><strong>Cuota:</strong> ${formatD(summary?.cuota || 0)} · <strong>Aprobación:</strong> ${summary?.approval || 0}%</div>
+                    <div><strong>Interés:</strong> ${formatD(summary?.interest || 0)} · <strong>Comisión:</strong> ${formatD(summary?.commission || 0)}</div>
+                </div>
+                <div class="status-row">
+                    <button class="credit-action" onclick="submitCreditApplication()">Enviar solicitud</button>
+                    <button class="credit-action secondary" onclick="compareCreditBank('${bank.id}')">Comparar</button>
+                </div>
+                <div id="creditAnalysisResult" class="credit-result"></div>
+                            </div>
+                        </div>`;
+    }
+    return `
+                <div class="credit-floating-backdrop" onclick="closeCreditPanel()">
+                    <div class="bank-tile-panel bank-tile-offer credit-floating-menu" onclick="event.stopPropagation()">
+                        <button class="credit-floating-close" type="button" onclick="closeCreditPanel()" aria-label="Cerrar">×</button>
+            <strong>Oferta de ${bank.nombre}</strong>
+            <p>${bank.descripcion}</p>
+            <div class="offer-metrics"><span>Tasa <b>${formatPorcentaje(bank.tasa)}</b></span><span>Límite para ti <b>${formatD(creditLimit)}</b></span><span>Aprobación <b>${bank.aprobacion}%</b></span></div>
+            <div class="offer-pill">${getCreditOfferText()}</div>
+                    </div>
+                </div>`;
+}
+
+function renderCreditModule() {
+    const mount = document.getElementById('creditModuleContainer');
+    if (!mount) return;
+    refreshCreditLoanStatuses();
+    const profile = getCreditPlayerSnapshot();
+    const bank = getCreditBankById(creditBankSelected) || CREDIT_BANKS[0];
+    const type = getCreditTypeById(creditTypeSelected) || CREDIT_TYPES[0];
+    const creditLimit = getCreditLimit(bank);
+    const draft = { ...creditLoanDraft, bankId: bank.id, typeId: type.id, principal: Math.min(creditLimit, Math.max(5000, Number(creditLoanDraft.principal || 250000))), plazo: Number(creditLoanDraft.plazo || 120) };
+    const summary = buildCreditSummary(bank, type, draft.principal, draft.plazo);
+    const compareBanks = getCreditComparisonRows();
+    const comparisonRows = [
+        ['Tasa', ...compareBanks.map(b => `${(b.tasa * 100).toFixed(2)}%`)],
+        ['Límite para ti', ...compareBanks.map(b => formatD(getCreditLimit(b)))],
+        ['Comisión', ...compareBanks.map(b => `${b.comision.toFixed(1)}%`)],
+        ['Plazo', ...compareBanks.map(b => b.plazo)],
+        ['Aprobación', ...compareBanks.map(b => `${b.aprobacion}%`)],
+        ['Riesgo', ...compareBanks.map(b => b.riesgo)],
+        ['Beneficio', ...compareBanks.map(b => b.beneficio.slice(0, 46))]
+    ];
+    mount.innerHTML = `
+        <div class="credit-module">
+            <div class="credit-header">
+                <div>
+                    <span class="credit-kicker">FINANCIAMIENTO ESTRATÉGICO</span>
+                    <h3 id="creditModuleTitle">Centro de Crédito</h3>
+                    <p class="credit-subtitle">Compara condiciones, calcula el coste real y elige tu siguiente movimiento.</p>
+                </div>
+                <span class="credit-badge">${getActiveCreditEvents().slice(0, 2).join(' · ') || 'Sistema financiero del juego'}</span>
+            </div>
+            <div class="credit-summary-grid">
+                <div class="credit-stat"><div class="label">Dinero disponible</div><div class="value">${formatD(profile.capitalDisponible)}</div></div>
+                <div class="credit-stat"><div class="label">Patrimonio</div><div class="value">${formatD(profile.patrimonio)}</div></div>
+                <div class="credit-stat"><div class="label">Deuda total</div><div class="value">${formatD(profile.deudaActual)}</div></div>
+                <div class="credit-stat"><div class="label">Score</div><div class="value">${profile.score}</div></div>
+                <div class="credit-stat"><div class="label">Reputación</div><div class="value">${profile.reputacion}</div></div>
+                <div class="credit-stat"><div class="label">Capacidad</div><div class="value">${formatD(Math.max(5000, Math.floor(profile.patrimonio * 0.35)))}</div></div>
+            </div>
+            <div class="credit-graph">
+                <div class="credit-graph-heading"><strong>Índice de capacidad financiera</strong><span>Últimos 10 ciclos</span></div>
+                <div class="credit-graph-bars">
+                    ${[28, 32, 38, 41, 49, 58, 62, 70, 74, 81].map(v => `<span style="height:${v}%"></span>`).join('')}
+                </div>
+            </div>
+            <div class="credit-grid">
+                <div class="credit-card">
+                    <h4>Explorar bancos</h4>
+                    <div class="bank-tiles">
+                        ${CREDIT_BANKS.map(b => `
+                            <div class="bank-tile ${b.id === bank.id ? 'selected' : ''}" data-bank-id="${b.id}">
+                                <div class="top"><span class="name">${renderCreditBankLogo(b)}${b.nombre}</span><span class="credit-tag">★ ${b.prestigio}</span></div>
+                                <div class="meta">Tasa ${formatPorcentaje(b.tasa)} · Para ti ${formatD(getCreditLimit(b))} · ${b.aprobacion}%</div>
+                                <div class="meta">${b.especialidad}</div>
+                                <div class="actions">
+                                    <button class="mini-btn primary" onclick="openCreditOffer('${b.id}')">Ver oferta</button>
+                                    <button class="mini-btn secondary" onclick="startCreditApplication('${b.id}')">Solicitar</button>
+                                    <button class="mini-btn secondary" onclick="compareCreditBank('${b.id}')">Comparar</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${renderCreditBankPanel(bank, type, draft, summary, comparisonRows)}
+                </div>
+            <div class="credit-card">
+                <h4>Mis créditos</h4>
+                <div class="loan-list">
+                    ${creditLoans.length ? creditLoans.map(loan => `
+                        <div class="loan-item">
+                            <div class="loan-head">
+                                <strong>${loan.banco}</strong>
+                                <span class="status-pill ${getCreditStatusLabel(loan.estado)}">${loan.estado}</span>
+                            </div>
+                            <div><small>Tipo: ${loan.tipo}</small></div>
+                            <div>Capital: ${formatD(loan.capital)} · Total pendiente: ${formatD(loan.pendiente)}</div>
+                            <div>Intereses: ${formatD(loan.intereses)} · Próxima cuota: ${formatD(loan.cuota)}</div>
+                            <div>Tiempo restante: ${loan.tiempo} · Riesgo: ${loan.riesgo}%</div>
+                            <div class="status-row">
+                                <button class="credit-action secondary" onclick="payCreditInstallment('${loan.id || 'loan'}')">Pagar cuota</button>
+                                <button class="credit-action secondary" onclick="renegotiateCredit('${loan.id || 'loan'}')">Renegociar</button>
+                            </div>
+                        </div>
+                    `).join('') : '<div class="loan-empty">Aún no tienes créditos activos. Compara una oferta y envía tu primera solicitud.</div>'}
+                </div>
+            </div>
+        </div>
+    `;
+    const bankSelect = document.getElementById('creditBankSelect');
+    if (bankSelect) {
+        bankSelect.onchange = () => {
+            creditBankSelected = bankSelect.value;
+            creditLoanDraft.bankId = creditBankSelected;
+            renderCreditModule();
+        };
+    }
+    const typeSelect = document.getElementById('creditTypeSelect');
+    if (typeSelect) {
+        typeSelect.onchange = () => {
+            creditTypeSelected = typeSelect.value;
+            creditLoanDraft.typeId = creditTypeSelected;
+            renderCreditModule();
+        };
+    }
+    const amountInput = document.getElementById('creditAmountInput');
+    if (amountInput) amountInput.oninput = () => {
+        const val = Number(amountInput.value || 0);
+        creditLoanDraft.principal = Math.min(getCreditLimit(getCreditBankById(creditBankSelected)), Math.max(5000, val || 0));
+        renderCreditModule();
+    };
+    const termSelect = document.getElementById('creditTermSelect');
+    if (termSelect) {
+        termSelect.onchange = () => {
+            creditLoanDraft.plazo = Number(termSelect.value || 120);
+            renderCreditModule();
+        };
+    }
+}
+
+function selectCreditBank(bankId) {
+    creditBankSelected = bankId;
+    creditLoanDraft.bankId = bankId;
+    renderCreditModule();
+}
+
+function openCreditOffer(bankId) {
+    creditPanelMode = 'offer';
+    creditPanelOpen = true;
+    selectCreditBank(bankId);
+}
+
+function startCreditApplication(bankId) {
+    creditPanelMode = 'apply';
+    creditPanelOpen = true;
+    selectCreditBank(bankId);
+    requestAnimationFrame(() => {
+        document.getElementById('creditAmountInput')?.focus();
+    });
+}
+
+function compareCreditBank(bankId) {
+    creditPanelMode = 'compare';
+    creditPanelOpen = true;
+    selectCreditBank(bankId);
+    compareCreditBanks();
+}
+
+function compareCreditBanks() {
+    const banks = getCreditComparisonRows();
+    const detail = bancos.length ? banks.map(b => `${b.nombre}: ${b.tasa * 100}% / ${getCreditLimit(b)} / ${b.aprobacion}%`).join(' · ') : 'No hay bancos disponibles';
+    toast(`Comparación activa: ${detail}`, 'info');
+}
+
+function submitCreditApplication() {
+    const bank = getCreditBankById(creditBankSelected) || CREDIT_BANKS[0];
+    const type = getCreditTypeById(creditTypeSelected) || CREDIT_TYPES[0];
+    const creditLimit = getCreditLimit(bank);
+    const principal = Math.max(5000, Number(creditLoanDraft.principal || 250000));
+    const plazo = Number(creditLoanDraft.plazo || 120);
+    if (principal > creditLimit) {
+        toast(`El límite para tu patrimonio en ${bank.nombre} es ${formatD(creditLimit)}.`, 'error');
+        creditLoanDraft.principal = creditLimit;
+        renderCreditModule();
+        return;
+    }
+    const summary = buildCreditSummary(bank, type, principal, plazo);
+    const resultEl = document.getElementById('creditAnalysisResult');
+    const profile = getCreditPlayerSnapshot();
+    const activeLoans = creditLoans.filter(loan => loan.estado !== 'Pagado');
+    const loanLimit = Math.max(1, Math.min(5, Math.floor(Number(nivel || 1) / 2) + 1));
+    if (activeLoans.length >= loanLimit) {
+        toast(`Tu nivel actual permite hasta ${loanLimit} crédito${loanLimit === 1 ? '' : 's'} activo${loanLimit === 1 ? '' : 's'}.`, 'error');
+        return;
+    }
+    let approvalChance = summary.approval;
+    if (profile.deudaActual > profile.patrimonio * 0.45) approvalChance -= 20;
+    if (principal > creditLimit * 0.8) approvalChance -= 10;
+    approvalChance = Math.max(8, Math.min(96, approvalChance));
+    const approved = Math.random() * 100 < approvalChance;
+    if (resultEl) {
+        resultEl.className = `credit-result ${approved ? 'success' : 'error'} visible`;
+        resultEl.innerHTML = approved
+            ? `<strong>✅ Crédito aprobado</strong><br>Banco: ${bank.nombre}<br>Tipo: ${type.nombre}<br>Capital: ${formatD(summary.principal)}<br>Total: ${formatD(summary.total)}<br>Probabilidad: ${summary.approval}%`
+            : `<strong>❌ Solicitud rechazada</strong><br>Tu deuda actual es demasiado alta para este banco.<br><br>Alternativas: <button class="mini-btn primary" onclick="creditLoanDraft.principal = Math.max(5000, ${Math.round(principal * 0.7)}); renderCreditModule();">Solicitar un monto menor</button> · <button class="mini-btn secondary" onclick="selectCreditBank('${CREDIT_BANKS.filter(b => b.id !== bank.id)[0]?.id || bank.id}'); renderCreditModule();">Elegir otro banco</button> · <button class="mini-btn secondary" onclick="scoreCrediticio = Math.min(850, scoreCrediticio + 20); renderCreditModule();">Mejorar score</button>`;
+    }
+    if (approved) {
+        const loan = {
+            id: `credit_${Date.now()}`,
+            banco: bank.nombre,
+            tipo: type.nombre,
+            capital: summary.principal,
+            pendiente: summary.total,
+            intereses: summary.interest,
+            cuota: summary.cuota,
+            tiempo: formatCreditTerm(plazo),
+            estado: 'Al día',
+            riesgo: summary.risk,
+            fecha: new Date().toLocaleString(),
+            createdAt: Date.now(),
+            nextPaymentAt: Date.now() + Math.max(30000, plazo * 1000),
+            cuotasPagadas: 0,
+            cuotasTotales: Math.max(1, Math.round(plazo / 30))
+        };
+        creditLoans.unshift(loan);
+        capital += summary.principal;
+        deuda = Number(deuda || 0) + summary.total;
+        prestamosActivos += 1;
+        registrarOperacion('Crédito aprobado', summary.principal, `${bank.nombre} · ${type.nombre}`);
+        toast(`✅ Crédito aprobado por ${bank.nombre}`, 'success');
+        renderCreditModule();
+        actualizarTodo();
+        guardar();
+    } else {
+        toast('❌ Solicitud rechazada. Considera menor monto o otro banco.', 'error');
+    }
+}
+
+function payCreditInstallment(loanId) {
+    const loan = creditLoans.find(item => item.id === loanId);
+    if (!loan) return;
+    const amount = Math.min(loan.cuota, capital);
+    if (amount <= 0) return toast('No tienes capital disponible para pagar la cuota.', 'error');
+    capital -= amount;
+    loan.pendiente = Math.max(0, loan.pendiente - amount);
+    if (loan.pendiente <= 0) {
+        loan.estado = 'Pagado';
+        loan.pendiente = 0;
+        loan.nextPaymentAt = null;
+    } else {
+        loan.cuotasPagadas = Number(loan.cuotasPagadas || 0) + 1;
+        loan.nextPaymentAt = Date.now() + 60000;
+        loan.estado = 'Próximo a vencer';
+    }
+    toast(`✅ Cuota pagada: ${formatD(amount)}`, 'success');
+    renderCreditModule();
+    actualizarTodo();
+    guardar();
+}
+
+function renegotiateCredit(loanId) {
+    const loan = creditLoans.find(item => item.id === loanId);
+    if (!loan) return;
+    loan.estado = 'Renegociado';
+    loan.pendiente = loan.pendiente * 1.08;
+    toast('⚠️ Renegociación abierta con nuevas condiciones.', 'info');
+    renderCreditModule();
+    guardar();
+}
+
+function formatPorcentaje(value) {
+    return `${(Number(value || 0) * 100).toFixed(2)}%`;
+}
+
 function toggleSidebarMenu(event) {
     event?.stopPropagation();
     const sidebar = document.getElementById('sidebarMenu');
-    const toggle = document.getElementById('sidebarToggle');
+    const toggle = document.getElementById('headerMenuToggle');
     if (!sidebar || !toggle) return;
     const abierto = sidebar.classList.toggle('open');
     toggle.setAttribute('aria-expanded', String(abierto));
@@ -192,7 +688,7 @@ function toggleSidebarMenu(event) {
 
 function cerrarSidebarMenu() {
     const sidebar = document.getElementById('sidebarMenu');
-    const toggle = document.getElementById('sidebarToggle');
+    const toggle = document.getElementById('headerMenuToggle');
     if (!sidebar || !toggle) return;
     sidebar.classList.remove('open');
     toggle.setAttribute('aria-expanded', 'false');
@@ -673,6 +1169,9 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     dividendosTotal = u.div || 0;
     logrosCompletados = u.logros || [];
     amigos = Array.isArray(u.amigos) ? u.amigos : [];
+    friendChats = u.friendChats && typeof u.friendChats === 'object' ? u.friendChats : {};
+    friendChatMeta = u.friendChatMeta && typeof u.friendChatMeta === 'object' ? u.friendChatMeta : {};
+    notificationsReadAt = Number(u.notificationsReadAt || 0);
     solicitudesAmistad = Array.isArray(u.friendRequests) ? u.friendRequests : [];
     proyectosCooperativos = normalizarProyectosCooperativos(u.cooperativeProjects);
     let flags = u.flags || {};
@@ -704,6 +1203,8 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     }));
     historialGlobal = u.historialGlobal || [];
     historialBancario = u.historialBancario || [];
+    creditLoans = Array.isArray(u.creditLoans) ? u.creditLoans : [];
+    sincronizarDeudaGlobal();
     prestamosActivos = u.prestamosActivos || 0;
     puntosHabilidadTotal = u.puntosHabilidadTotal || 0;
     desafiosDiarios = u.desafios || [];
@@ -1100,7 +1601,7 @@ async function iniciarJuego() {
     initQR();
     actualizarFotoPerfil();
     aplicarIdioma();
-    toast("Bienvenido de vuelta, " + usuarioActual, "success");
+    toast("Bienvenido de vuelta, " + usuarioActual, "info");
 
     guardar().catch(e => {
         console.warn("Error guardando progreso en segundo plano:", e);
@@ -1133,6 +1634,7 @@ async function guardar(propagateError = false) {
         tarjetaGlobal: tarjetaGlobal,
         historialGlobal: historialGlobal,
         historialBancario: historialBancario,
+        creditLoans: creditLoans,
         puntosHabilidadTotal: puntosHabilidadTotal,
         desafios: desafiosDiarios,
         desafiosCompletados: desafiosCompletadosHoy,
@@ -1148,6 +1650,9 @@ async function guardar(propagateError = false) {
         usernameElegido: usernameElegido,
         usernameSetupPending: usernamePendiente,
         amigos: amigos,
+        friendChats: friendChats,
+        friendChatMeta: friendChatMeta,
+        notificationsReadAt: notificationsReadAt,
         friendRequests: solicitudesAmistad,
         cooperativeProjects: proyectosCooperativos
     };
@@ -2430,6 +2935,7 @@ function toggleTransferPlayer(forceOpen) {
 function registrarOperacion(tipo, monto, detalle) {
     historialBancario.unshift({
         tiempo: new Date().toLocaleTimeString(),
+        createdAt: Date.now(),
         tipo,
         monto,
         detalle
@@ -2655,7 +3161,8 @@ function aplicarInteresesTarjetas() {
 }
 
 function sincronizarDeudaGlobal() {
-    deuda = deudaTarjetas();
+    const deudaCreditos = creditLoans.reduce((total, loan) => total + Math.max(0, Number(loan.pendiente) || 0), 0);
+    deuda = deudaTarjetas() + deudaCreditos;
 }
 
 setInterval(() => { if (usuarioActual) aplicarInteresesTarjetas(); }, 60000);
@@ -2692,32 +3199,80 @@ const EVENTOS = [
     {m:"🌪️ Clima extremo: fenómenos naturales provocan contracción económica.", cats:Object.keys(CATEGORIAS), mul:0.55, tipo:"crisis"}
 ];
 
+const EVENTOS_EXTENDIDOS = Array.isArray(window.EVENTOS_COMPLETOS)
+    ? window.EVENTOS_COMPLETOS.map((evento) => {
+        const impactoValores = Object.values(evento.impactosSectores || {});
+        const promedioImpacto = impactoValores.length
+            ? impactoValores.reduce((sum, valor) => sum + Number(valor || 0), 0) / impactoValores.length
+            : 0;
+        const cats = [...new Set([
+            ...(evento.sectoresBeneficiados || []),
+            ...(evento.sectoresPerjudicados || []),
+            ...(evento.impactosSectores ? Object.keys(evento.impactosSectores) : [])
+        ])].filter(Boolean);
+
+        return {
+            ...evento,
+            m: evento.noticia || evento.titulo || evento.subtitulo || 'Evento de mercado',
+            cats,
+            mul: Math.max(0.45, Math.min(1.8, 1 + promedioImpacto / 100)),
+            tipo: evento.categoria === 'crisis' || evento.categoria === 'financiero' || evento.categoria === 'regulacion' ? 'crisis' : 'boom'
+        };
+    })
+    : EVENTOS;
+
 function aplicarEvento(ev) {
-    Object.keys(sectorBoost).forEach(k => sectorBoost[k] = 1.0);
-    ev.cats.forEach(cat => sectorBoost[cat] = ev.mul);
-    eventoActivo = {
-        mensaje: ev.m,
-        duracion: 60,
-        restante: 60,
-        tipo: ev.tipo,
-        cats: ev.cats
+    const eventoNormalizado = {
+        ...ev,
+        mensaje: ev.m || ev.noticia || ev.titulo || 'Evento de mercado',
+        duracion: Number(ev.duracion || 60),
+        restante: Number(ev.duracion || 60),
+        tipo: ev.tipo || (ev.categoria === 'crisis' || ev.categoria === 'financiero' || ev.categoria === 'regulacion' ? 'crisis' : 'boom'),
+        cats: ev.cats || Object.keys(ev.impactosSectores || {}) || []
     };
+
+    Object.keys(sectorBoost).forEach(k => sectorBoost[k] = 1.0);
+    eventoNormalizado.cats.forEach(cat => sectorBoost[cat] = eventoNormalizado.mul || 1.0);
+
+    if (eventoNormalizado.impactosSectores) {
+        Object.entries(eventoNormalizado.impactosSectores).forEach(([sector, impacto]) => {
+            sectorBoost[sector] = Math.max(0.5, Math.min(1.8, 1 + Number(impacto || 0) / 100));
+        });
+    }
+
+    eventoActivo = eventoNormalizado;
+
+    const volatilidadBase = Number(eventoNormalizado.volatilidad || 0);
+    const confianzaBase = Number(eventoNormalizado.confianza || 0);
+    const liquidezBase = Number(eventoNormalizado.liquidez || 0);
+    mercadoGlobal.fuerza = Math.max(-0.0012, Math.min(0.0012,
+        (mercadoGlobal.fuerza || 0) * 0.45 +
+        ((confianzaBase - 5) * 0.00018) +
+        (liquidezBase * 0.00008) +
+        (volatilidadBase * 0.00012)
+    ));
+    mercadoGlobal.estado = mercadoGlobal.fuerza > 0.00025 ? 'alcista' : mercadoGlobal.fuerza < -0.00025 ? 'bajista' : 'estable';
+    mercadoGlobal.restante = 30;
+    mercadoGlobal.eventoActual = eventoNormalizado.id || null;
+    mercadoGlobal.ultimoEvento = eventoNormalizado.m;
+
     let box = document.getElementById("eventoMundial");
-    const mensaje = traducirTexto(ev.m);
+    const mensaje = traducirTexto(eventoNormalizado.mensaje || eventoNormalizado.m || eventoNormalizado.titulo || 'Evento de mercado');
     const duracion = traducirTexto('Duracion');
     const sectores = traducirTexto('Sectores');
-    document.getElementById("eventoMundialTexto").innerHTML = `<b>${mensaje}</b><br><small style='color:#888'>${duracion}: 60 ${traducirTexto('segundos')} | ${sectores}: ${ev.cats.slice(0,3).map(traducirTexto).join(", ")}${ev.cats.length>3?"...":""}</small>`;
+    document.getElementById("eventoMundialTexto").innerHTML = `<b>${mensaje}</b><br><small style='color:#888'>${duracion}: ${eventoNormalizado.duracion} ${traducirTexto('segundos')} | ${sectores}: ${eventoNormalizado.cats.slice(0,3).map(traducirTexto).join(", ")}${eventoNormalizado.cats.length>3?"...":""}</small>`;
     box.style.display = "block";
-    box.className = "evento-box active " + ev.tipo;
+    box.className = "evento-box active " + eventoNormalizado.tipo;
     document.getElementById("eventoTimer").style.width = "100%";
-    toast(mensaje, ev.tipo === "boom" ? "success" : "error");
+    toast(mensaje, eventoNormalizado.tipo === "boom" ? "success" : "error");
 }
 
 setInterval(() => {
     if (estaEnPreferencias()) return;
     if (!eventoActivo) {
         if (Math.random() > 0.65) {
-            let ev = EVENTOS[Math.floor(Math.random() * EVENTOS.length)];
+            const eventosDisponibles = EVENTOS_EXTENDIDOS.length ? EVENTOS_EXTENDIDOS : EVENTOS;
+            let ev = eventosDisponibles[Math.floor(Math.random() * eventosDisponibles.length)];
             aplicarEvento(ev);
         }
         return;
@@ -2728,6 +3283,8 @@ setInterval(() => {
     if (eventoActivo.restante <= 0) {
         eventoActivo = null;
         Object.keys(sectorBoost).forEach(k => sectorBoost[k] = 1.0);
+        mercadoGlobal.eventoActual = null;
+        mercadoGlobal.ultimoEvento = null;
         document.getElementById("eventoMundial").style.display = "none";
         toast(traducirTexto("El evento mundial ha finalizado. El mercado se normaliza."), "info");
     }
@@ -4514,6 +5071,9 @@ function updatePrecioEmpresa(emp) {
         const sectorTrend = (catMult * newsMult - 1) * 0.0018;
         const newsRecency = noticiasHistorial.filter(n => n.empresa === emp).slice(0, 3).reduce((acc, item) => acc + Number(item.impacto || 0), 0) * 0.35;
         const eventPressure = Number(meta.impulsoEvento || 0) * 0.9;
+        const activeEventSectorImpact = eventoActivo && eventoActivo.impactosSectores
+            ? Number(eventoActivo.impactosSectores[cat] || eventoActivo.impactosSectores[meta.sector] || 0) / 100
+            : 0;
         const recovery = Number(meta.recuperacion || 0);
         const noise = (Math.random() - 0.5) * (meta.vol || 0.02) * 0.22 * Math.sqrt(deltaSegundos);
 
@@ -4529,6 +5089,7 @@ function updatePrecioEmpresa(emp) {
             mercadoMood +
             sectorTrend +
             eventPressure +
+            activeEventSectorImpact * 0.0065 +
             recovery +
             newsRecency +
             noise
@@ -5747,6 +6308,66 @@ function scrollToWiki(id) {
 // ==========================================
 // NAVEGACION, TOASTS Y UTILIDADES UI
 // ==========================================
+function toast(message, type = 'info', options = {}) {
+    if (!notificacionesEmergentesActivas) return;
+
+    const tiempoToast = new Date().toISOString();
+    historialSistema.unshift({
+        title: type === 'success' ? 'Sistema' : type === 'error' ? 'Sistema' : type === 'warning' ? 'Sistema' : 'Sistema',
+        detail: String(message || ''),
+        icon: type === 'success' ? '✅' : type === 'error' ? '⚠️' : type === 'warning' ? '⚠️' : 'ℹ️',
+        tiempo: tiempoToast
+    });
+    if (historialSistema.length > 40) historialSistema.pop();
+
+    const container = document.getElementById('notis-container') || (() => {
+        const el = document.createElement('div');
+        el.id = 'notis-container';
+        el.setAttribute('aria-live', 'polite');
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    container.style.display = 'block';
+
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast ${type}`;
+    toastEl.setAttribute('role', 'status');
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'toast-text';
+    textWrap.textContent = String(message || '');
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close';
+    closeBtn.setAttribute('aria-label', 'Cerrar notificación');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => {
+        toastEl.style.animation = 'slideOut 0.25s ease forwards';
+        setTimeout(() => toastEl.remove(), 250);
+    });
+
+    const timer = document.createElement('div');
+    timer.className = 'toast-timer';
+    const timerBar = document.createElement('div');
+    timerBar.className = 'toast-timer-bar';
+    timer.appendChild(timerBar);
+
+    toastEl.appendChild(textWrap);
+    toastEl.appendChild(closeBtn);
+    toastEl.appendChild(timer);
+    container.appendChild(toastEl);
+
+    const timeoutMs = options.timeout || 4000;
+    window.setTimeout(() => {
+        if (toastEl.isConnected) {
+            toastEl.style.animation = 'slideOut 0.25s ease forwards';
+            window.setTimeout(() => toastEl.remove(), 250);
+        }
+    }, timeoutMs);
+}
+
 function llenarSelectsBancos() {
     const bancoSelEl = document.getElementById("bancoSeleccionado");
     const bancoDestEl = document.getElementById("bancoDestino");
@@ -5771,6 +6392,146 @@ function llenarSelectsBancos() {
         bancoSelEl.selectedIndex = 0;
         actualizarInfoBancos();
     }
+}
+
+function getNotificationItems() {
+    const items = [];
+
+    historialSistema.forEach((item, index) => {
+        const detalle = item.detail || '';
+        const esBienvenida = typeof detalle === 'string' && detalle.toLowerCase().includes('bienvenido de vuelta');
+        const esSesion = typeof detalle === 'string' && (
+            detalle.toLowerCase().includes('inició sesión') ||
+            detalle.toLowerCase().includes('sesión iniciada') ||
+            detalle.toLowerCase().includes('iniciada') ||
+            detalle.toLowerCase().includes('inicio de sesión')
+        );
+
+        items.push({
+            id: `system_${index}_${item.tiempo || item.title || ''}`,
+            category: esBienvenida || esSesion ? 'sistema' : 'eventos',
+            icon: item.icon || 'ℹ️',
+            title: esBienvenida || esSesion ? 'Sistema' : (detalle || item.title || 'Evento del juego'),
+            detail: esBienvenida || esSesion ? detalle : '',
+            timestamp: Date.parse(item.tiempo) || Date.now() - index * 60000
+        });
+    });
+
+    historialGlobal.forEach((item, index) => {
+        const timestamp = item.fecha ? Date.parse(item.fecha) : item.tiempo ? Date.parse(item.tiempo) : Date.now() - index * 60000;
+        items.push({
+            id: `event_${index}_${item.fecha || item.tiempo || ''}`,
+            category: 'eventos', icon: item.tipo === 'success' ? '✅' : item.tipo === 'warning' ? '⚠️' : 'ℹ️',
+            title: item.mensaje || 'Evento del juego', detail: item.fecha || item.tiempo || 'Historial del juego', timestamp: Number.isFinite(timestamp) ? timestamp : Date.now() - index * 60000
+        });
+    });
+
+    noticiasHistorial.forEach((item, index) => {
+        const timestamp = item.fecha ? Date.parse(item.fecha) : item.tiempo ? Date.parse(item.tiempo) : Date.now() - index * 60000;
+        const empresa = item.empresa || 'Mercado';
+        const titulo = item.titulo || 'Actualización del mercado';
+        items.push({
+            id: `news_${index}_${empresa}_${titulo}`,
+            category: 'noticias', icon: item.tipo === 'positivo' ? '📈' : '📉',
+            title: `${empresa}: ${titulo}`,
+            detail: item.texto || item.contexto || 'Novedad del mercado',
+            timestamp: Number.isFinite(timestamp) ? timestamp : Date.now() - index * 60000
+        });
+    });
+
+    historialBancario.forEach((item, index) => items.push({
+        id: `bank_${index}_${item.tiempo || ''}`, category: 'bancos', icon: '🏦',
+        title: item.tipo || 'Movimiento bancario', detail: `${formatD(item.monto || 0)} · ${item.detalle || ''}`, timestamp: Date.parse(item.tiempo) || 0
+    }));
+
+    solicitudesAmistad.forEach((request, index) => items.push({
+        id: `request_${index}_${request.username}`, category: 'amigos', icon: '👥',
+        title: `Solicitud de amistad de ${request.username}`, detail: 'Pendiente de respuesta', timestamp: Date.parse(request.createdAt) || 0
+    }));
+
+    Object.entries(friendChats).forEach(([friend, messages]) => (Array.isArray(messages) ? messages : []).slice(-10).forEach((message, index) => items.push({
+        id: message.id || `chat_${friend}_${message.time || index}`, category: 'amigos', icon: '💬',
+        title: `Mensaje de ${message.from === usuarioActual ? 'ti' : friend}`, detail: message.text, timestamp: Number(message.createdAt) || Date.now() - index * 60000
+    })));
+
+    creditLoans.forEach((loan, index) => items.push({
+        id: `loan_${loan.id || index}`, category: 'sistema', icon: loan.estado === 'Retrasado' ? '🚨' : '💳',
+        title: `${loan.banco}: crédito ${loan.estado}`, detail: `Pendiente ${formatD(loan.pendiente || 0)} · Cuota ${formatD(loan.cuota || 0)}`, timestamp: Number(loan.createdAt) || 0
+    }));
+
+    if (Array.isArray(prediccionesHistorial)) {
+        prediccionesHistorial.slice(0, 20).forEach((item, index) => {
+            const timestamp = item.tiempo ? Date.parse(item.tiempo) : Date.now() - index * 60000;
+            items.push({
+                id: `advisor_${index}_${item.asesor || 'prediccion'}`,
+                category: 'asesores',
+                icon: '🎩',
+                title: item.asesor ? `${item.asesor}: predicción` : 'Predicción de asesor',
+                detail: item.resultado || item.mensaje || 'Revisión de asesor',
+                timestamp: Number.isFinite(timestamp) ? timestamp : Date.now() - index * 60000
+            });
+        });
+    }
+
+    return items.sort((first, second) => second.timestamp - first.timestamp).slice(0, 120);
+}
+
+function renderNotificaciones(targetId = 'notificationsList') {
+    const list = document.getElementById(targetId);
+    if (!list) return;
+    const allItems = getNotificationItems();
+    const filtered = notificationFilter === 'todos' ? allItems : allItems.filter(item => item.category === notificationFilter);
+    list.innerHTML = filtered.length ? filtered.map(item => `<article class="notification-item ${item.timestamp > notificationsReadAt ? 'unread' : ''}"><span class="notification-icon">${item.icon}</span><span class="notification-copy"><strong>${escaparHtmlSocial(item.title)}</strong><small>${escaparHtmlSocial(item.detail)}</small></span></article>`).join('') : '<div class="social-empty">No hay actividad para este filtro.</div>';
+    const unread = allItems.filter(item => item.timestamp > notificationsReadAt).length;
+    const unreadElement = document.getElementById('notificationsUnread');
+    if (unreadElement) unreadElement.textContent = unread ? `${unread} notificación${unread === 1 ? '' : 'es'} nueva${unread === 1 ? '' : 's'}` : 'Todo al día';
+}
+
+function filtrarNotificaciones(filter) {
+    notificationFilter = filter;
+    document.querySelectorAll('.notification-filter').forEach(button => button.classList.toggle('active', button.dataset.notificationFilter === filter));
+    renderNotificaciones();
+}
+
+function marcarNotificacionesLeidas() {
+    notificationsReadAt = Date.now();
+    renderNotificaciones();
+    guardar();
+}
+
+function actualizarNotificaciones() {
+    renderNotificaciones();
+    toast('Notificaciones actualizadas.', 'info');
+}
+
+function actualizarBotonEmergentes() {
+    const button = document.getElementById('toggleNotificacionesEmergentesBtn');
+    if (button) {
+        button.textContent = notificacionesEmergentesActivas ? 'Ocultar' : 'Activar';
+    }
+
+    const headerButton = document.getElementById('toggleNotificacionesEmergentesHeaderBtn');
+    if (headerButton) {
+        headerButton.textContent = notificacionesEmergentesActivas ? '🔔 Desactivar' : '🔔 Activar';
+    }
+}
+
+function toggleNotificacionesEmergentes() {
+    const container = document.getElementById('notis-container');
+    notificacionesEmergentesActivas = !notificacionesEmergentesActivas;
+
+    if (container) {
+        container.style.display = notificacionesEmergentesActivas ? 'block' : 'none';
+        if (!notificacionesEmergentesActivas) {
+            container.innerHTML = '';
+        }
+    }
+
+    actualizarBotonEmergentes();
+}
+
+function renderHistorial() {
+    renderNotificaciones('historialMensajes');
 }
 
 function mostrar(id) {
@@ -5814,7 +6575,8 @@ function mostrar(id) {
     if (id === 'amigos') {
         actualizarDatosSociales();
     }
-    if (id === 'bancos') { llenarSelectsBancos(); actualizarInfoBancos(); }
+    if (id === 'notificaciones') renderNotificaciones();
+    if (id === 'bancos') { llenarSelectsBancos(); actualizarInfoBancos(); renderCreditModule(); }
     if (id === 'qr') { /* QR se inicializa automaticamente */ }
     aplicarIdioma();
 }
@@ -5985,21 +6747,19 @@ async function renderSocial() {
     const friendsList = document.getElementById('socialFriendsList');
     const projectsList = document.getElementById('cooperativeProjectsList');
     if (!requestsList || !friendsList || !projectsList) return;
+    const chatForm = document.getElementById('socialChatForm');
+    if (chatForm) chatForm.onsubmit = enviarMensajeAmigo;
     const requestsHtml = solicitudesAmistad.map((request, index) => `<div class="social-list-item"><span>Solicitud de <strong>${escaparHtmlSocial(request.username)}</strong></span><span><button onclick="aceptarSolicitudAmistad(${index})">Aceptar</button><button onclick="rechazarSolicitudAmistad(${index})">Rechazar</button></span></div>`).join('');
-    const friendProfiles = await Promise.all(amigos.map(async friend => {
-        try {
-            return await db.getSocialProfile(friend.username);
-        } catch (error) {
-            return { ...friend, avatarSeleccionado: 0, fotoPerfil: '' };
-        }
-    }));
+    const friendProfiles = await Promise.all(amigos.map(friend => obtenerPerfilSocialCached(friend.username)));
     const friendsHtml = friendProfiles.map(friend => {
         const avatarIndex = obtenerIndiceAvatarPerfil(friend.fotoPerfil, friend.avatarSeleccionado);
         const profilePhoto = String(friend.fotoPerfil || '');
         const avatarSource = profilePhoto.startsWith('data:image/')
             ? profilePhoto
             : getAssetUrl(profilePhoto || `assets/perfiles/perfil-${String(avatarIndex + 1).padStart(2, '0')}.png?v=1`);
-        return `<div class="social-list-item social-friend-item"><img class="social-friend-avatar" src="${escaparHtmlSocial(avatarSource)}" alt="Foto de ${escaparHtmlSocial(friend.username)}" loading="lazy" decoding="async"><span class="social-friend-identity"><strong>${escaparHtmlSocial(friend.username)}</strong><small>ID público: ${escaparHtmlSocial(formatearIdPublico(friend.publicId))}</small></span><span class="social-list-actions"><button type="button" onclick="verPerfilSocial('${encodeURIComponent(friend.username)}')">Inspeccionar</button><button type="button" onclick="prepararProyectoCooperativo('${encodeURIComponent(friend.username)}')">Proponer inversión</button><button type="button" onclick="eliminarAmigo('${encodeURIComponent(friend.username)}')">Eliminar amigo</button></span></div>`;
+        const encodedUsername = encodeURIComponent(friend.username);
+        const unread = Number(friendChatMeta[getFriendChatKey(friend.username)]?.unread || 0);
+        return `<div class="social-list-item social-friend-item"><img class="social-friend-avatar" src="${escaparHtmlSocial(avatarSource)}" alt="Foto de ${escaparHtmlSocial(friend.username)}" loading="lazy" decoding="async"><span class="social-friend-identity"><strong>${escaparHtmlSocial(friend.username)}</strong><small>ID público: ${escaparHtmlSocial(formatearIdPublico(friend.publicId))}</small></span><span class="social-list-actions"><button type="button" onclick="abrirChatAmigo('${encodedUsername}')">Chat${unread ? ` <span class="chat-unread-badge">${Math.min(99, unread)}</span>` : ''}</button><button type="button" onclick="verPerfilSocial('${encodedUsername}')">Inspeccionar</button><button type="button" onclick="prepararProyectoCooperativo('${encodedUsername}')">Proponer inversión</button><button type="button" onclick="eliminarAmigo('${encodedUsername}')">Eliminar amigo</button></span></div>`;
     }).join('');
     requestsList.innerHTML = requestsHtml || '<div class="social-empty">No tienes solicitudes pendientes.</div>';
     friendsList.innerHTML = friendsHtml || '<div class="social-empty">Aún no tienes amigos agregados.</div>';
@@ -6029,6 +6789,115 @@ async function renderSocial() {
         const amountLabel = project.status === 'Aceptado' && investment ? '' : ` · Aporte: ${formatD(project.amount || 0)}`;
         return `<div class="social-list-item" data-cooperative-project-id="${escaparHtmlSocial(project.id)}"><span class="cooperative-project-summary"><span class="cooperative-company-logo"><img src="${getEmpresaLogo(project.company)}" alt="Logo de ${escaparHtmlSocial(project.company || 'empresa')}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';"></span><span><strong>${escaparHtmlSocial(project.name || `${obtenerPropietarioProyecto(project) || 'Jugador'} + ${project.partner || 'jugador'}`)}</strong><small>${escaparHtmlSocial(project.company || 'Sin empresa')} · ${escaparHtmlSocial(project.status || 'Pendiente')}${amountLabel} · <span class="cooperative-project-price cooperative-project-value">${valueLabel}</span> · <span class="cooperative-project-price cooperative-project-result ${resultClass}">${resultLabel}</span></small></span></span><span class="social-list-actions">${action}</span></div>`;
     }).join('') : '<div class="social-empty">Todavía no hay proyectos cooperativos.</div>';
+    renderFriendChat();
+}
+
+function getFriendChatKey(username) {
+    return String(username || '').trim().toLowerCase();
+}
+
+function getFriendMessages(username) {
+    const key = getFriendChatKey(username);
+    return Array.isArray(friendChats[key]) ? friendChats[key] : [];
+}
+
+async function obtenerPerfilSocialCached(username) {
+    const key = getFriendChatKey(username);
+    const cached = socialProfilesCache.get(key);
+    if (cached && Date.now() - cached.updatedAt < 60000) {
+        return cached.profile;
+    }
+
+    try {
+        const profile = await db.getSocialProfile(username);
+        socialProfilesCache.set(key, { profile, updatedAt: Date.now() });
+        return profile;
+    } catch (error) {
+        const fallbackProfile = {
+            username: String(username || '').trim(),
+            publicId: '',
+            nivel: 1,
+            xp: 0,
+            reputacion: 50,
+            ganancias: 0,
+            perdidas: 0,
+            inversiones: 0,
+            sectores: 0,
+            plan: null,
+            avatarSeleccionado: 0,
+            fotoPerfil: ''
+        };
+        socialProfilesCache.set(key, { profile: fallbackProfile, updatedAt: Date.now() });
+        return fallbackProfile;
+    }
+}
+
+function abrirChatAmigo(encodedUsername) {
+    const username = decodeURIComponent(encodedUsername || '');
+    if (!username) return;
+    activeFriendChat = username;
+    renderFriendChat();
+    document.getElementById('socialChatInput')?.focus();
+}
+
+function renderFriendChat() {
+    const panel = document.getElementById('socialChatPanel');
+    const empty = document.getElementById('socialChatEmpty');
+    const header = document.getElementById('socialChatHeader');
+    const messages = document.getElementById('socialChatMessages');
+    if (!panel || !empty || !header || !messages) return;
+    const friend = amigos.find(item => getFriendChatKey(item.username) === getFriendChatKey(activeFriendChat));
+    if (!friend) {
+        panel.classList.add('hidden');
+        empty.classList.add('hidden');
+        return;
+    }
+    panel.classList.remove('hidden');
+    empty.classList.add('hidden');
+    const chatKey = getFriendChatKey(friend.username);
+    if (Number(friendChatMeta[chatKey]?.unread || 0) > 0) {
+        friendChatMeta[chatKey] = { ...(friendChatMeta[chatKey] || {}), unread: 0, lastReadAt: Date.now() };
+        guardar();
+    }
+    header.innerHTML = `<strong>Chat con ${escaparHtmlSocial(friend.username)}</strong><button type="button" class="chat-close-button" onclick="cerrarChatAmigo()" aria-label="Cerrar chat">×</button>`;
+    const chatMessages = getFriendMessages(friend.username);
+    messages.innerHTML = chatMessages.length ? chatMessages.map(message => `<div class="social-chat-message ${message.from === usuarioActual ? 'outgoing' : 'incoming'}"><span>${escaparHtmlSocial(message.text)}</span><small>${escaparHtmlSocial(message.time || '')}</small></div>`).join('') : '<div class="social-empty">Aún no hay mensajes. Escribe el primero.</div>';
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function cerrarChatAmigo() {
+    activeFriendChat = '';
+    renderFriendChat();
+}
+
+async function enviarMensajeAmigo(event) {
+    event.preventDefault();
+    const input = document.getElementById('socialChatInput');
+    const friend = amigos.find(item => getFriendChatKey(item.username) === getFriendChatKey(activeFriendChat));
+    const text = String(input?.value || '').trim();
+    if (!friend || !text) return;
+    if (Date.now() - lastChatSentAt < 1000) return toast('Espera un momento antes de enviar otro mensaje.', 'info');
+    lastChatSentAt = Date.now();
+    const message = { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, from: usuarioActual, to: friend.username, text: text.slice(0, 240), time: new Date().toLocaleTimeString(), createdAt: Date.now() };
+    const key = getFriendChatKey(friend.username);
+    friendChats[key] = [...getFriendMessages(friend.username), message].slice(-100);
+    try {
+        await db.updateSocialData(friend.username, data => {
+            const recipientKey = getFriendChatKey(usuarioActual);
+            const recipientChats = { ...(data.friendChats || {}), [recipientKey]: [...(Array.isArray(data.friendChats?.[recipientKey]) ? data.friendChats[recipientKey] : []), message].slice(-100) };
+            const recipientMeta = { ...(data.friendChatMeta || {}) };
+            recipientMeta[getFriendChatKey(usuarioActual)] = { ...(recipientMeta[getFriendChatKey(usuarioActual)] || {}), unread: Number(recipientMeta[getFriendChatKey(usuarioActual)]?.unread || 0) + 1, lastMessageAt: Date.now() };
+            return { ...data, friendChats: recipientChats, friendChatMeta: recipientMeta };
+        });
+        await guardar(true);
+        if (input) input.value = '';
+        renderFriendChat();
+        document.getElementById('socialChatStatus').textContent = 'Mensaje enviado';
+        setTimeout(() => { const status = document.getElementById('socialChatStatus'); if (status) status.textContent = ''; }, 1800);
+    } catch (error) {
+        friendChats[key] = friendChats[key].filter(item => item.id !== message.id);
+        toast(error.message || 'No se pudo enviar el mensaje.', 'error');
+    }
 }
 
 let actualizacionSocialEnCurso = null;
@@ -6109,7 +6978,26 @@ async function actualizarDatosSociales() {
                         .filter((friend, index, list) => list.findIndex(item => String(item.username).toLowerCase() === String(friend.username).toLowerCase()) === index)
                 }));
             }
-            solicitudesAmistad = Array.isArray(data.friendRequests) ? data.friendRequests : [];
+            const pendingRequests = Array.isArray(data.friendRequests) ? data.friendRequests : [];
+            const validRequests = await Promise.all(pendingRequests.map(async request => {
+                const requester = String(request.username || '').trim().toLowerCase();
+                if (!requester) return null;
+                try {
+                    await db.getSocialProfile(requester);
+                    return request;
+                } catch (error) {
+                    return null;
+                }
+            }));
+            solicitudesAmistad = validRequests.filter(Boolean);
+            if (solicitudesAmistad.length !== pendingRequests.length) {
+                await db.updateSocialData(usuarioActual, currentData => ({
+                    ...currentData,
+                    friendRequests: solicitudesAmistad
+                }));
+            }
+            friendChats = data.friendChats && typeof data.friendChats === 'object' ? data.friendChats : {};
+            friendChatMeta = data.friendChatMeta && typeof data.friendChatMeta === 'object' ? data.friendChatMeta : {};
             const cooperativeProjects = Array.isArray(data.cooperativeProjects) ? data.cooperativeProjects : [];
             const cooperativeRequests = Array.isArray(data.cooperativeRequests) ? data.cooperativeRequests : [];
             const remoteProjects = await db.getCooperativeProjectsForPartner(usuarioActual);
@@ -6120,7 +7008,12 @@ async function actualizarDatosSociales() {
                     && project.status !== 'Aceptado'
                     ? { ...project, status: 'Pendiente de respuesta' }
                     : project));
-            if (document.getElementById('amigos')?.classList.contains('hidden') === false) await renderSocial();
+            if (document.getElementById('amigos')?.classList.contains('hidden') === false) {
+                await renderSocial();
+            }
+            if (activeFriendChat) {
+                renderFriendChat();
+            }
             return true;
         } catch (error) {
             console.warn('No se pudo actualizar la sección Amigos:', error);
@@ -6419,7 +7312,7 @@ function confirmarVentaCooperativa() {
 }
 
 setInterval(() => {
-    if (usuarioActual && document.getElementById('amigos')?.classList.contains('hidden') === false) {
+    if (usuarioActual) {
         actualizarDatosSociales();
     }
 }, 5000);
@@ -6463,7 +7356,17 @@ function toast(m, t="info", options={}) {
         return;
     }
     m = traducirTexto(m);
-    registrarMensajeHistorial(m, t);
+
+    historialSistema.unshift({
+        title: 'Sistema',
+        detail: m,
+        icon: t === 'success' ? '✅' : t === 'error' ? '⚠️' : t === 'warning' ? '⚠️' : 'ℹ️',
+        tiempo: new Date().toISOString()
+    });
+    if (historialSistema.length > 40) historialSistema.pop();
+
+    renderNotificaciones();
+
     const c = document.getElementById("notis-container");
     const d = document.createElement("div");
     d.className = "toast " + t;
@@ -7577,8 +8480,6 @@ function renderHabilidades() {
 // ==========================================
 // SISTEMA DE REPUTACION CON MISIONES
 // ==========================================
-let reputacion = 50;
-let eventosReputacion = [];
 const RANGOS_REP = [
     { min: 0, max: 15, nombre: "🚫 Paria", descuento: 5, color: "#ff4444" },
     { min: 16, max: 30, nombre: "😬 Desconocido", descuento: 2, color: "#ff8800" },

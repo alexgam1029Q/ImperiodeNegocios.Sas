@@ -63,22 +63,25 @@ Las cifras incluyen los archivos fuente y de configuración del proyecto, pero e
 ## Funcionalidades principales
 * Login y registro normal mediante usuario y contraseña guardados en `users`.
 * Inicio de sesión con Google OAuth, con selección inicial de nombre de usuario.
-Ranking público de jugadores por ganancias de operaciones y dividendos acumulados.
-ID público secuencial para encontrar perfiles sin compartir el correo.
-Propuestas de inversión cooperativa entre amigos con aporte y participación.
-Migración preparada para billeteras, transacciones y amistades protegidas con RLS.
-Panel de control con resumen financiero.
-Sistema de inversiones.
-Compra y venta de activos.
-Portafolio con seguimiento de inversiones.
-Asesores financieros y recomendaciones estratégicas.
-Árbol de habilidades.
-Sistema de reputación.
-Sistema de logros.
-Ajustes de usuario.
-Confirmaciones antes de realizar acciones importantes.
-Guardado de progreso directamente en Supabase.
-Sincronización de los datos del usuario con la base de datos.
+* Ranking público de jugadores por ganancias de operaciones y dividendos acumulados.
+* ID público secuencial para encontrar perfiles sin compartir el correo.
+* Sistema social con búsqueda, solicitud de amistad, lista de amigos y perfiles públicos.
+* Chat de amigos emergente con mensajes sincronizados entre usuarios.
+* Propuestas de inversión cooperativa entre amigos con aporte y participación.
+* Panel de proyectos cooperativos para aceptar, rechazar, vender o limpiar inversiones pendientes.
+* Migración preparada para billeteras, transacciones y amistades protegidas con RLS.
+* Panel de control con resumen financiero.
+* Sistema de inversiones.
+* Compra y venta de activos.
+* Portafolio con seguimiento de inversiones.
+* Asesores financieros y recomendaciones estratégicas.
+* Árbol de habilidades.
+* Sistema de reputación.
+* Sistema de logros.
+* Ajustes de usuario.
+* Confirmaciones antes de realizar acciones importantes.
+* Guardado de progreso directamente en Supabase.
+* Sincronización de los datos del usuario con la base de datos.
 * Logotipos de empresas obtenidos dinámicamente mediante Logo.dev.
 * Compras y suscripciones procesadas mediante PayPal Developer.
 
