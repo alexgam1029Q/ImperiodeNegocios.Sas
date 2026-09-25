@@ -1,5 +1,14 @@
 # Actualizaciones recientes
 
+## 24 de septiembre de 2026
+
+- Se reorganizó la estructura documental del repositorio para separar claramente la aplicación, la documentación y los recursos del juego.
+- Se consolidó la guía principal del proyecto en un README general accesible desde la raíz del repositorio.
+- Se reordenó la documentación técnica para reflejar la estructura real de carpetas y archivos del proyecto.
+- Se ajustó la sección de cambios para mantener un historial más claro y legible por fechas.
+- Se revisó la organización del contenido de `Base/docs` para facilitar la navegación del proyecto por parte de usuarios y desarrolladores.
+- Se deja el repositorio más limpio y fácil de mantener para futuras ampliaciones del simulador.
+
 ## 14 de septiembre de 2026
 
 - Se reorganizó la sección de Amigos para combinar búsquedas, solicitudes, lista de amigos, chat y proyectos cooperativos en un mismo flujo social.

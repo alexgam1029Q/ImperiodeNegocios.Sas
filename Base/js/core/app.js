@@ -935,6 +935,15 @@ if (typeof Chart !== 'undefined') Chart.register({
     }
 });
 
+function deferHeavyUiWork(callback) {
+    if (typeof window === 'undefined') return callback();
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(() => callback(), { timeout: 300 });
+        return;
+    }
+    setTimeout(callback, 60);
+}
+
 function initChart() {
     if (typeof Chart === 'undefined') return;
     const canvasPanel = document.getElementById('graficaPanel');
@@ -1589,18 +1598,20 @@ async function iniciarJuego() {
     document.getElementById('plansScreen').style.display = 'none';
     renderSidebarMenu();
     mostrar('panel');
-    initChart();
-    dibujarTienda();
-    actualizarTodo();
-    renderLogros();
-    initAsesores();
-    initHabilidades();
-    renderReputacion();
-    initChartPortafolio();
-    initDesafios();
-    initQR();
-    actualizarFotoPerfil();
-    aplicarIdioma();
+    deferHeavyUiWork(() => {
+        initChart();
+        dibujarTienda();
+        actualizarTodo();
+        renderLogros();
+        initAsesores();
+        initHabilidades();
+        renderReputacion();
+        initChartPortafolio();
+        initDesafios();
+        initQR();
+        actualizarFotoPerfil();
+        aplicarIdioma();
+    });
     toast("Bienvenido de vuelta, " + usuarioActual, "info");
 
     guardar().catch(e => {
@@ -2067,15 +2078,17 @@ function actualizarFotoPerfil() {
         ? getAssetUrl(usuarioFotoPerfil)
         : usuarioFotoPerfil;
     const foto = fotoUrl ? `url("${fotoUrl}")` : '';
-    [avatar, profilePhoto].filter(Boolean).forEach(elemento => {
-        elemento.style.backgroundImage = foto;
-        elemento.style.backgroundSize = 'cover';
-        elemento.style.backgroundPosition = 'center';
-        elemento.textContent = '';
+    deferHeavyUiWork(() => {
+        [avatar, profilePhoto].filter(Boolean).forEach(elemento => {
+            elemento.style.backgroundImage = foto;
+            elemento.style.backgroundSize = 'cover';
+            elemento.style.backgroundPosition = 'center';
+            elemento.textContent = '';
+        });
     });
     if (preview) {
         preview.innerHTML = usuarioFotoPerfil
-            ? `<img src="${fotoUrl}" alt="Foto de perfil" loading="lazy" decoding="async" onerror="this.replaceWith(document.createTextNode('👤'))">`
+            ? `<img src="${fotoUrl}" alt="Foto de perfil" loading="lazy" decoding="async" fetchpriority="low" onerror="this.replaceWith(document.createTextNode('👤'))">`
             : '';
     }
 }
@@ -2085,7 +2098,7 @@ function renderAvataresPerfil() {
     if (!grid) return;
     grid.innerHTML = FOTOS_PERFIL_PREDETERMINADAS.map((foto, index) => `
         <button type="button" class="profile-avatar-option${index === avatarSeleccionado ? ' selected' : ''}" onclick="seleccionarAvatarPerfil(${index}, event)" aria-label="Elegir avatar de cuerpo completo ${index + 1}">
-            <img src="${getAssetUrl(foto)}" alt="Avatar ${index + 1}" loading="lazy" decoding="async" onerror="this.replaceWith(document.createTextNode('👤'))">
+            <img src="${getAssetUrl(foto)}" alt="Avatar ${index + 1}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.replaceWith(document.createTextNode('👤'))">
         </button>
     `).join('');
 }
@@ -2093,6 +2106,9 @@ function renderAvataresPerfil() {
 function actualizarAvatarCuerpoCompleto() {
     const avatar = document.getElementById('profileFullAvatar');
     if (!avatar) return;
+    avatar.loading = 'lazy';
+    avatar.decoding = 'async';
+    avatar.fetchPriority = 'low';
     avatar.src = getAssetUrl(`assets/avatares/avatar-${String(avatarSeleccionado + 1).padStart(2, '0')}.png?v=6`);
     avatar.onerror = () => {
         avatar.onerror = null;
