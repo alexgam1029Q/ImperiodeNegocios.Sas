@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imperio-shell-v82';
+const CACHE_NAME = 'imperio-shell-v83';
 const APP_SHELL = [
     './',
     './index.html',
@@ -33,7 +33,7 @@ self.addEventListener('fetch', event => {
     if (requestUrl.origin !== self.location.origin) return;
 
     event.respondWith(
-        fetch(event.request).then(response => {
+        fetch(event.request, { cache: 'no-cache' }).then(response => {
             const copy = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
             return response;
