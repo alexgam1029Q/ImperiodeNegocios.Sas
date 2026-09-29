@@ -46,6 +46,8 @@ let usuarioFotoPerfil = "";
 let avatarSeleccionado = 0;
 let monedaActual = "USD";
 let planActual = null;
+let planExpiresAt = null;
+let planMonthlyGrantAt = null;
 let planSeleccionado = null;
 let planPagoPendiente = null;
 let volverAjustesDesdePlanesActivo = false;
@@ -72,12 +74,28 @@ const MASCOTAS = [
     { id: 'serpiente', nombre: 'Serpiente', emoji: '🐍', especialidad: 'Adaptabilidad', descripcion: 'Se adapta rápidamente a los cambios del mercado.' }
 ];
 const PLANES = {
-    basico: { nombre: 'Básico', precioCOP: 0, capitalInicial: 10000, multiplicadorXP: 1, clase: 'basic', beneficios: ['Acceso completo al mercado', 'Comprar y vender sin límites', 'Todas las empresas, noticias y eventos', 'Misiones, logros y portafolio'] },
-    premium: { nombre: 'Premium', precioCOP: 5000, precioPaypalUSD: 1.25, capitalInicial: 25000, multiplicadorXP: 1.15, clase: 'premium', beneficios: ['Todo lo incluido en Básico', '+15% de experiencia', 'Estadísticas e informes avanzados', 'Recompensas adicionales en misiones'] },
-    pro: { nombre: 'Pro', precioCOP: 10000, precioPaypalUSD: 2.50, capitalInicial: 50000, multiplicadorXP: 1.3, clase: 'pro', beneficios: ['Todo lo incluido en Premium', '+30% de experiencia', 'Análisis completo de empresas y sectores', 'Asesores avanzados y recompensas exclusivas'] }
+    basico: { nombre: 'Básico', precioCOP: 0, capitalInicial: 10000, multiplicadorXP: 1, clase: 'basic', periodoLabel: 'Gratis · sin vencimiento', beneficios: ['Acceso completo al mercado', 'Comprar y vender sin límites', 'Todas las empresas, noticias y eventos', 'Misiones, logros y portafolio'] },
+    premium: { nombre: 'Premium', precioCOP: 5000, precioPaypalUSD: 1.25, capitalInicial: 25000, multiplicadorXP: 1.15, duracionDias: 30, clase: 'premium', periodoLabel: 'Mensual · 30 días', beneficios: ['Todo lo incluido en Básico', '+15% de experiencia', 'Estadísticas e informes avanzados', 'Recompensas adicionales en misiones'] },
+    pro: { nombre: 'Pro', precioCOP: 10000, precioPaypalUSD: 2.50, capitalInicial: 50000, multiplicadorXP: 1.3, duracionDias: 30, clase: 'pro', periodoLabel: 'Mensual · 30 días', beneficios: ['Todo lo incluido en Premium', '+30% de experiencia', 'Análisis completo de empresas y sectores', 'Asesores avanzados y recompensas exclusivas'] },
+    permanente: { nombre: 'Permanente', precioCOP: 104900, precioPaypalUSD: 26.23, capitalInicial: 0, capitalMensual: 30000, multiplicadorXP: 1.3, clase: 'permanent', periodoLabel: 'Acceso de por vida', mostrarPrecioCOP: false, beneficios: ['Pago único · acceso de por vida', '30.000 US$ de capital cada mes', 'Todo lo incluido en Pro', '+30% de experiencia', 'Análisis completo de empresas y sectores', 'Asesores avanzados y recompensas exclusivas'] }
 };
 const tiposCambio = { USD: 1, COP: 4000, EUR: 0.92, GBP: 0.78, JPY: 157, CNY: 7.18, INR: 86.5, MXN: 19.2, BRL: 5.48, CAD: 1.38, AUD: 1.53, CHF: 0.80, KRW: 1390, RUB: 80, TRY: 41, ZAR: 17.8, SEK: 9.5, NOK: 9.7, PLN: 3.65, AED: 3.67, CLP: 950 };
-const precioPlanBase = plan => (plan.precioCOP || 0) / tiposCambio.COP;
+const safelyNumber = value => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+const calcularRendimientoPct = (precioActual, precioCompra) => {
+    const actual = safelyNumber(precioActual);
+    const compra = safelyNumber(precioCompra);
+    if (!compra || compra <= 0) return 0;
+    return ((actual - compra) / compra) * 100;
+};
+const precioPlanBase = plan => safelyNumber(plan?.precioCOP) / (tiposCambio.COP || 1);
+const obtenerVigenciaPlan = id => {
+    const plan = PLANES[id];
+    if (plan?.duracionDias && planExpiresAt) return `Vence el ${new Date(planExpiresAt).toLocaleDateString('es-CO')}`;
+    return id === 'permanente' ? 'Acceso de por vida' : 'Acceso gratuito';
+};
 const TRADUCCIONES = {
     en: {
         '🏠 Panel General': '🏠 Dashboard', '💰 Invertir': '💰 Invest', '📊 Portafolio': '📊 Portfolio', '📈 Mercado': '📈 Market', '📰 Noticias': '📰 News', '🧠 Aprender': '🧠 Learn', '🏦 Bancos': '🏦 Banks', '🏆 Logros': '🏆 Achievements', '🎩 Asesores': '🎩 Advisors', '⚡ Habilidades': '⚡ Skills', '⭐ Reputacion': '⭐ Reputation', '🎯 Desafios': '🎯 Challenges', 'ℹ️ Acerca de': 'ℹ️ About',
@@ -824,13 +842,205 @@ renderSidebarMenu();
 // GRAFICA
 // ==========================================
 let chartPanel = null;
-let startNetPanel = 10000;
+let panelChartHistory = null;
+let panelChartValues = [];
+let panelChartWindowStart = 0;
+let panelChartFollowsLatest = true;
+const PANEL_CHART_WINDOW_SIZE = 30;
+const PANEL_CHART_HISTORY_LIMIT = 120;
+
+function formatPanelAverage(value) {
+    return `${(Number(value) || 0).toFixed(2)}%`;
+}
+
+function actualizarLeyendaGraficaPanel(color) {
+    const leyenda = document.querySelector('#panel .dashboard-chart-legend');
+    const indicador = leyenda?.querySelector('i');
+    if (!leyenda || !indicador) return;
+    leyenda.style.color = color;
+    indicador.style.backgroundColor = color;
+    indicador.style.boxShadow = `0 0 9px ${color}`;
+}
+
+function normalizarHistorialGraficaPanel(historial) {
+    if (historial?.metrica !== 'promedio-general-v1' || !Array.isArray(historial.valores)) return null;
+    const valores = historial.valores.map(Number).filter(Number.isFinite).slice(-PANEL_CHART_HISTORY_LIMIT);
+    if (!valores.length) return null;
+    return { valores, actualizadoEn: Number(historial.actualizadoEn) || 0, metrica: historial.metrica };
+}
+
+function restaurarHistorialGraficaPanel(usuario, historialRemoto) {
+    const remoto = normalizarHistorialGraficaPanel(historialRemoto);
+    let local = null;
+    try {
+        const guardado = localStorage.getItem(`imperio_panel_chart_${usuario}`);
+        local = normalizarHistorialGraficaPanel(guardado ? JSON.parse(guardado) : null);
+    } catch (error) {
+        console.warn('No se pudo restaurar el historial local de la gráfica:', error);
+    }
+    return local && (!remoto || local.actualizadoEn >= remoto.actualizadoEn) ? local : remoto;
+}
+
+function obtenerHistorialGraficaPanel() {
+    const guardado = normalizarHistorialGraficaPanel(panelChartHistory);
+    if (guardado) return { valores: guardado.valores };
+    return { valores: crearHistorialPromedioGeneralPanel() };
+}
+
+function crearHistorialPromedioGeneralPanel() {
+    const { labels, datasets } = crearHistorialInicialPortafolio();
+    if (!datasets.length) return Array(16).fill(0);
+    const pesos = datasets.map(dataset => {
+        const posicion = portafolio[dataset.label];
+        return posicion ? (Number(posicion.precioCompra) || 0) * (Number(posicion.cant) || 0) : 0;
+    });
+
+    return labels.map((_, indice) => {
+        let sumaPonderada = 0;
+        let pesoTotal = 0;
+        datasets.forEach((dataset, datasetIndex) => {
+            const valor = dataset.data[indice];
+            const peso = pesos[datasetIndex];
+            if (typeof valor === 'number' && Number.isFinite(valor) && peso > 0) {
+                sumaPonderada += valor * peso;
+                pesoTotal += peso;
+            }
+        });
+        return pesoTotal ? sumaPonderada / pesoTotal : 0;
+    });
+}
+
+function obtenerPromedioGeneralPanel() {
+    const empresas = Object.keys(portafolio);
+    const pesoTotal = empresas.reduce((total, empresa) => {
+        const posicion = portafolio[empresa];
+        return total + (Number(posicion.precioCompra) || 0) * (Number(posicion.cant) || 0);
+    }, 0);
+    if (!pesoTotal) return 0;
+
+    return empresas.reduce((total, empresa) => {
+        const posicion = portafolio[empresa];
+        const precioCompra = safelyNumber(posicion.precioCompra);
+        const peso = precioCompra * safelyNumber(posicion.cant);
+        const rendimiento = calcularRendimientoPct(preciosMercado[empresa], precioCompra);
+        return total + rendimiento * peso;
+    }, 0) / pesoTotal;
+}
+
+function obtenerLimitesGraficaPanel(valores) {
+    const valoresValidos = valores.filter(Number.isFinite);
+    if (!valoresValidos.length) return { min: -1, max: 1 };
+    const minimo = Math.min(...valoresValidos);
+    const maximo = Math.max(...valoresValidos);
+    const centro = (minimo + maximo) / 2;
+    const margen = Math.max((maximo - minimo) * 0.18, Math.abs(centro) * 0.002, 0.05);
+    return { min: minimo - margen, max: maximo + margen };
+}
+
+function guardarHistorialGraficaPanel() {
+    if (!chartPanel || !usuarioActual) return;
+    panelChartHistory = {
+        valores: panelChartValues.slice(-PANEL_CHART_HISTORY_LIMIT),
+        actualizadoEn: Date.now(),
+        metrica: 'promedio-general-v1'
+    };
+    try {
+        localStorage.setItem(`imperio_panel_chart_${usuarioActual}`, JSON.stringify(panelChartHistory));
+    } catch (error) {
+        console.warn('No se pudo guardar el historial local de la gráfica:', error);
+    }
+}
+
+function actualizarControlHistorialGraficaPanel() {
+    const control = document.getElementById('panelChartHistoryRange');
+    const estado = document.getElementById('panelChartHistoryState');
+    const maximo = Math.max(0, panelChartValues.length - PANEL_CHART_WINDOW_SIZE);
+    panelChartWindowStart = panelChartFollowsLatest
+        ? maximo
+        : Math.max(0, Math.min(panelChartWindowStart, maximo));
+    if (control) {
+        control.max = String(maximo);
+        control.value = String(panelChartWindowStart);
+        control.disabled = maximo === 0;
+    }
+    if (estado) estado.textContent = panelChartWindowStart >= maximo ? 'En vivo' : 'Historial';
+}
+
+function actualizarVentanaGraficaPanel(animacion = 'none') {
+    if (!chartPanel) return;
+    actualizarControlHistorialGraficaPanel();
+    const valores = panelChartValues.slice(panelChartWindowStart, panelChartWindowStart + PANEL_CHART_WINDOW_SIZE);
+    if (!valores.length) return;
+    chartPanel.data.labels = valores.map((_, index) => panelChartWindowStart + index === 0 ? 'Inicio' : '');
+    chartPanel.data.datasets[0].data = valores;
+    const limites = obtenerLimitesGraficaPanel(valores);
+    chartPanel.data.datasets[0].fill = limites.min <= 0 && limites.max >= 0
+        ? { target: { value: 0 }, above: 'rgba(0,230,162,0.18)', below: 'rgba(255,64,86,0.18)' }
+        : false;
+    const color = valores[valores.length - 1] < 0 ? '#ff4056' : '#00e6a2';
+    chartPanel.data.datasets[0].borderColor = color;
+    chartPanel.options.plugins.tooltip.borderColor = color;
+    chartPanel.options.scales.y.min = limites.min;
+    chartPanel.options.scales.y.max = limites.max;
+    actualizarLeyendaGraficaPanel(color);
+    chartPanel.update(animacion);
+}
+
+function deslizarGraficaPanel(valor) {
+    const maximo = Math.max(0, panelChartValues.length - PANEL_CHART_WINDOW_SIZE);
+    panelChartWindowStart = Math.max(0, Math.min(Number(valor) || 0, maximo));
+    panelChartFollowsLatest = panelChartWindowStart === maximo;
+    actualizarVentanaGraficaPanel('none');
+}
 
 // Registrar plugin global para mostrar el último valor
 if (typeof Chart !== 'undefined') Chart.register({
     id: 'lastValueLabel',
+    beforeDatasetsDraw(chart) {
+        if (chart.canvas.id !== 'graficaPanel') return;
+        const points = chart.getDatasetMeta(0)?.data;
+        const values = chart.data.datasets[0].data;
+        if (!points || points.length < 2) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.shadowBlur = 13;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (let index = 1; index < points.length; index++) {
+            const previous = points[index - 1];
+            const current = points[index];
+            const color = ((values[index - 1] + values[index]) / 2) < 0 ? '#ff4056' : '#00e6a2';
+            ctx.shadowColor = color;
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(previous.x, previous.y);
+            ctx.lineTo(current.x, current.y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    },
     afterDatasetsDraw(chart) {
         const ctx = chart.ctx;
+        if (chart.canvas.id === 'graficaPanel' && chart.chartArea && chart.scales.y.min <= 0 && chart.scales.y.max >= 0) {
+            const baselineY = chart.scales.y.getPixelForValue(0);
+            ctx.save();
+            ctx.beginPath();
+            ctx.setLineDash([2, 4]);
+            ctx.strokeStyle = 'rgba(168,184,199,0.5)';
+            ctx.lineWidth = 1;
+            ctx.moveTo(chart.chartArea.left, baselineY);
+            ctx.lineTo(chart.chartArea.right, baselineY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(92,107,121,0.95)';
+            ctx.fillRect(chart.chartArea.left + 5, baselineY - 9, 112, 18);
+            ctx.fillStyle = '#f3f6f8';
+            ctx.fillText('Punto de equilibrio', chart.chartArea.left + 9, baselineY);
+            ctx.restore();
+        }
         const visibleDatasets = chart.data.datasets.filter(ds => !ds.hidden);
         
         if (visibleDatasets.length === 0) return;
@@ -868,14 +1078,15 @@ if (typeof Chart !== 'undefined') Chart.register({
         
         // Detectar si es gráfica del panel (dólares) o portafolio (porcentaje)
         const isPanel = chart.canvas.id === 'graficaPanel';
+        if (isPanel) color = lastDataset.data[lastIndex] < 0 ? '#ff4056' : '#00e6a2';
         
         // Obtener el valor para mostrar
         let displayValue = '';
         let label = lastDataset.label;
         
         if (isPanel) {
-            // Panel: en dólares
-            displayValue = formatD(lastDataset.data[lastIndex]);
+            displayValue = formatPanelAverage(lastDataset.data[lastIndex]);
+            label = 'Promedio general';
         } else {
             // Portafolio: todo en porcentaje
             displayValue = (lastDataset.data[lastIndex] || 0).toFixed(2) + '%';
@@ -949,75 +1160,83 @@ function initChart() {
     const canvasPanel = document.getElementById('graficaPanel');
     if (!canvasPanel) return;
     const ctxPanel = canvasPanel.getContext('2d');
-    startNetPanel = getPatrimonioNeto() || 10000;
-        chartPanel = new Chart(ctxPanel, {
+    const historialPanel = obtenerHistorialGraficaPanel();
+    panelChartValues = historialPanel.valores.slice(-PANEL_CHART_HISTORY_LIMIT);
+    panelChartFollowsLatest = true;
+    panelChartWindowStart = Math.max(0, panelChartValues.length - PANEL_CHART_WINDOW_SIZE);
+    const valoresVisibles = panelChartValues.slice(panelChartWindowStart, panelChartWindowStart + PANEL_CHART_WINDOW_SIZE);
+    const limitesPanel = obtenerLimitesGraficaPanel(valoresVisibles);
+    const colorPanel = valoresVisibles[valoresVisibles.length - 1] < 0 ? '#ff4056' : '#00e6a2';
+    if (chartPanel) {
+        chartPanel.destroy();
+        chartPanel = null;
+    }
+    chartPanel = new Chart(ctxPanel, {
         type: 'line',
         data: {
-            labels: ['Inicio'],
+            labels: valoresVisibles.map((_, index) => panelChartWindowStart + index === 0 ? 'Inicio' : ''),
             datasets: [{
-                label: 'Ganancia/Pérdida',
-                data: [0],
+                label: 'Promedio general',
+                data: valoresVisibles,
                 borderWidth: 2,
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                tension: 0.2,
-                fill: false,
+                borderColor: colorPanel,
+                backgroundColor: 'rgba(0,230,162,0.18)',
+                tension: 0.14,
+                fill: {
+                    target: { value: 0 },
+                    above: 'rgba(0,230,162,0.18)',
+                    below: 'rgba(255,64,86,0.18)'
+                },
                 spanGaps: true,
                 borderJoinStyle: 'round',
                 borderCapStyle: 'round',
                 pointRadius: 0,
                 pointHoverRadius: 6,
-                pointBackgroundColor: ctx => {
-                    const index = ctx.dataIndex;
-                    if (index === 0) return '#4aec57';
-                    const current = ctx.dataset.data[index];
-                    const previous = ctx.dataset.data[index - 1];
-                    return current < previous ? '#ff4c4c' : '#4aec57';
-                },
-                pointBorderColor: ctx => {
-                    const index = ctx.dataIndex;
-                    if (index === 0) return '#4aec57';
-                    const current = ctx.dataset.data[index];
-                    const previous = ctx.dataset.data[index - 1];
-                    return current < previous ? '#ff4c4c' : '#4aec57';
-                },
+                pointBackgroundColor: context => context.raw < 0 ? '#ff4056' : '#00e6a2',
+                pointBorderColor: context => context.raw < 0 ? '#ffdfe3' : '#d8fff2',
                 segment: {
-                    borderColor: ctx => ctx.p0.parsed.y <= ctx.p1.parsed.y ? '#4aec57' : '#ff4c4c'
+                    borderColor: context => ((context.p0.parsed.y + context.p1.parsed.y) / 2) < 0 ? '#ff4056' : '#00e6a2'
                 }
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: { duration: 450, easing: 'linear' },
             plugins: {
-                legend: { labels: { color: '#aaa' } },
+                legend: { display: false },
                 tooltip: {
-                    backgroundColor: '#111',
+                    backgroundColor: 'rgba(3,17,31,0.97)',
                     titleColor: '#fff',
-                    bodyColor: '#ddd',
-                    borderColor: '#444',
+                    bodyColor: '#d7e9f8',
+                    borderColor: colorPanel,
                     borderWidth: 1,
-                    callbacks: {
-                        label: ctx => ctx.parsed.y >= 0 ? ` +${formatD(ctx.parsed.y)}` : ` ${formatD(ctx.parsed.y)}`
-                    }
+                    callbacks: { label: ctx => `Promedio general ${formatPanelAverage(ctx.parsed.y)}` }
                 }
             },
             scales: {
                 y: {
-                    grid: { color: 'rgba(255,255,255,0.06)' },
+                    min: limitesPanel.min,
+                    max: limitesPanel.max,
+                    grid: { color: context => context.tick.value === 0 ? 'rgba(0,190,232,0.22)' : 'rgba(20,78,118,0.2)' },
                     ticks: {
-                        color: '#aaa',
-                        callback: value => value >= 0 ? `+${formatD(value)}` : formatD(value)
+                        color: '#8ea9c3',
+                        maxTicksLimit: 5,
+                        callback: value => formatPanelAverage(value)
                     },
-                    border: { color: 'rgba(255,255,255,0.12)' }
+                    border: { color: 'rgba(0,127,190,0.32)' }
                 },
                 x: {
-                    grid: { color: 'rgba(255,255,255,0.06)' },
-                    ticks: { color: '#aaa' },
-                    border: { color: 'rgba(255,255,255,0.12)' }
+                    grid: { color: 'rgba(20,78,118,0.16)' },
+                    ticks: { color: '#8ea9c3', maxRotation: 0, autoSkip: false },
+                    border: { color: 'rgba(0,127,190,0.32)' }
                 }
             }
         }
     });
+    actualizarLeyendaGraficaPanel(colorPanel);
+    actualizarControlHistorialGraficaPanel();
+    guardarHistorialGraficaPanel();
 }
 
 function updateChartLineColor(chart) {
@@ -1032,6 +1251,17 @@ function updateChartLineColor(chart) {
     dataset.backgroundColor = rising ? 'rgba(74,236,87,0.15)' : 'rgba(255,76,76,0.15)';
     dataset.pointBackgroundColor = rising ? '#4aec57' : '#ff4c4c';
     dataset.pointBorderColor = rising ? '#4aec57' : '#ff4c4c';
+}
+
+function actualizarGraficaPanel(promedioGeneral) {
+    if (!chartPanel) return;
+    panelChartValues.push(promedioGeneral);
+    if (panelChartValues.length > PANEL_CHART_HISTORY_LIMIT) {
+        panelChartValues.shift();
+        panelChartWindowStart = Math.max(0, panelChartWindowStart - 1);
+    }
+    actualizarVentanaGraficaPanel();
+    guardarHistorialGraficaPanel();
 }
 
 // ==========================================
@@ -1172,6 +1402,7 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     nivel = Number.isFinite(Number(u.nivel)) && Number(u.nivel) > 0 ? Number(u.nivel) : 1;
     deuda = Number.isFinite(Number(u.deuda)) ? Number(u.deuda) : 0;
     portafolio = u.portafolio || {};
+    panelChartHistory = restaurarHistorialGraficaPanel(usuarioActual, u.panelChartHistory);
     gananciasTotal = u.g || 0;
     perdidasTotal = u.p || 0;
     totalInv = u.ti || 0;
@@ -1225,6 +1456,22 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     const monedaGuardada = tiposCambio[u.preferencias?.moneda] ? u.preferencias.moneda : null;
     monedaActual = monedaGuardada || 'USD';
     planActual = PLANES[u.plan] ? u.plan : null;
+    planExpiresAt = Number(u.planExpiresAt) || null;
+    if (planActual && PLANES[planActual].duracionDias) {
+        if (planExpiresAt && planExpiresAt <= Date.now()) {
+            planActual = 'basico';
+            planExpiresAt = null;
+        } else if (!planExpiresAt) {
+            planExpiresAt = Date.now() + PLANES[planActual].duracionDias * 24 * 60 * 60 * 1000;
+        }
+    } else {
+        planExpiresAt = null;
+    }
+    planMonthlyGrantAt = Number(u.planMonthlyGrantAt) || null;
+    if (planActual === 'permanente' && !planMonthlyGrantAt) {
+        capital += PLANES.permanente.capitalMensual;
+        planMonthlyGrantAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    }
     mascotaActual = u.mascota && MASCOTAS.some(m => m.id === u.mascota.id) ? { ...mascotaActual, ...u.mascota } : { ...mascotaActual };
     tarjetaGlobal = u.tarjetaGlobal ? Object.assign(JSON.parse(JSON.stringify(tarjetaDefault)), u.tarjetaGlobal) : JSON.parse(JSON.stringify(tarjetaDefault));
     deuda = Number(u.deuda) || 0;
@@ -1239,7 +1486,14 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
         try {
             let saved = JSON.parse(u.precios);
             Object.keys(saved).forEach(k => {
-                if (preciosMercado[k] !== undefined) preciosMercado[k] = saved[k];
+                if (preciosMercado[k] !== undefined) {
+                    const precioGuardado = safelyNumber(saved[k]);
+                    const meta = empresaMeta[k];
+                    if (precioGuardado > 0 && meta) {
+                        const precioMaximo = Math.max(meta.basePrice * 2, meta.basePrice + 1);
+                        preciosMercado[k] = Math.min(precioGuardado, precioMaximo);
+                    }
+                }
             });
         } catch(e){}
     }
@@ -1359,14 +1613,22 @@ function renderPlanes() {
     const grid = document.getElementById('plansGrid');
     if (!grid) return;
     if (!planSeleccionado || !PLANES[planSeleccionado]) planSeleccionado = planActual;
-    grid.innerHTML = Object.entries(PLANES).map(([id, plan]) => `
-        <article class="plan-card ${plan.clase}${planSeleccionado === id ? ' selected' : ''}" onclick="seleccionarPlan('${id}')">
-            <h2>${plan.nombre}</h2>
-            <div class="plan-price">${plan.precioCOP === 0 ? 'Gratis' : formatD(precioPlanBase(plan))}</div>
-            <div class="plan-capital">Capital inicial: ${formatD(plan.capitalInicial)}</div>
-            <ul class="plan-benefits">${plan.beneficios.map(beneficio => `<li>${beneficio}</li>`).join('')}</ul>
-        </article>
-    `).join('');
+    grid.innerHTML = Object.entries(PLANES).map(([id, plan]) => {
+        const precioVisible = safelyNumber(plan?.precioCOP) > 0 ? formatD(precioPlanBase(plan)) : 'Gratis';
+        const precioReferencia = plan?.mostrarPrecioCOP && plan?.clase !== 'permanent' && safelyNumber(plan?.precioCOP) > 0
+            ? `<div class="plan-price-reference">${safelyNumber(plan.precioCOP).toLocaleString('es-CO')} COP · pago único</div>`
+            : '';
+        return `
+            <article class="plan-card ${plan.clase}${planSeleccionado === id ? ' selected' : ''}" onclick="seleccionarPlan('${id}')">
+                <h2>${plan.nombre}</h2>
+                <div class="plan-price">${precioVisible}</div>
+                ${precioReferencia}
+                <div class="plan-period">${plan.periodoLabel}</div>
+                <div class="plan-capital">${plan.capitalMensual ? `Capital mensual: ${formatD(plan.capitalMensual)}` : `Capital inicial: ${formatD(plan.capitalInicial)}`}</div>
+                <ul class="plan-benefits">${plan.beneficios.map(beneficio => `<li>${beneficio}</li>`).join('')}</ul>
+            </article>
+        `;
+    }).join('');
     const boton = document.getElementById('confirmPlanBtn');
     if (boton) {
         boton.disabled = !planSeleccionado;
@@ -1419,18 +1681,53 @@ function activarPlanSeleccionado() {
     if (!planSeleccionado || !PLANES[planSeleccionado]) return;
     const esPrimeraEleccion = !planActual;
     planActual = planSeleccionado;
+    planExpiresAt = PLANES[planActual].duracionDias
+        ? Date.now() + PLANES[planActual].duracionDias * 24 * 60 * 60 * 1000
+        : null;
+    planMonthlyGrantAt = null;
     if (esPrimeraEleccion) capital = PLANES[planActual].capitalInicial;
+    if (PLANES[planActual].capitalMensual) {
+        capital += PLANES[planActual].capitalMensual;
+        planMonthlyGrantAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    }
     iniciarJuego();
 }
 
+function procesarCapitalMensualPermanente() {
+    if (planActual !== 'permanente' || !planMonthlyGrantAt || planMonthlyGrantAt > Date.now()) return;
+    const periodosPendientes = Math.floor((Date.now() - planMonthlyGrantAt) / (30 * 24 * 60 * 60 * 1000)) + 1;
+    const monto = PLANES.permanente.capitalMensual * periodosPendientes;
+    capital += monto;
+    planMonthlyGrantAt += periodosPendientes * 30 * 24 * 60 * 60 * 1000;
+    actualizarTodo();
+    guardar();
+    toast(`Capital mensual recibido: ${formatD(monto)}`, 'success');
+}
+
+function comprobarVencimientoPlan() {
+    if (!usuarioActual) return;
+    procesarCapitalMensualPermanente();
+    if (!planExpiresAt || planExpiresAt > Date.now()) return;
+    planActual = 'basico';
+    planExpiresAt = null;
+    actualizarTodo();
+    guardar();
+    toast('Tu plan mensual venció. Tu cuenta continúa con el plan Básico.', 'info');
+}
+
+setInterval(comprobarVencimientoPlan, 60000);
+
 function solicitarPagoPlan(planId) {
     const plan = PLANES[planId];
+    const detalleVigencia = plan.duracionDias
+        ? `acceso durante ${plan.duracionDias} días; la renovación es manual`
+        : 'acceso de por vida, sin renovación';
     resetModalConfirmState();
     planPagoPendiente = planId;
     modalActionType = 'pago_plan';
     document.getElementById("modalTitle").innerText = `Pagar plan ${plan.nombre}`;
     document.getElementById("modalText").innerHTML = `
-        <p>Completa el pago de <strong>${formatD(precioPlanBase(plan))}</strong> para activar el plan ${plan.nombre}.</p>
+        <p>Completa el pago de <strong>${formatD(precioPlanBase(plan))}</strong> para activar el plan ${plan.nombre}: ${detalleVigencia}.</p>
         <p style="margin-top:6px; color:#aaa; font-size:0.85em;">PayPal procesará el equivalente aproximado de US$ ${plan.precioPaypalUSD.toFixed(2)}.</p>
         <div id="paypalPlanButton" style="margin-top:16px; min-height:42px;"></div>
         <p id="paypalPlanStatus" style="margin-top:8px; color:#aaa; font-size:0.85em;">Cargando PayPal...</p>
@@ -1611,6 +1908,7 @@ async function iniciarJuego() {
         initQR();
         actualizarFotoPerfil();
         aplicarIdioma();
+        restaurarHistorialNoticiasUI();
     });
     toast("Bienvenido de vuelta, " + usuarioActual, "info");
 
@@ -1634,6 +1932,7 @@ async function guardar(propagateError = false) {
             recuperacion: meta.recuperacion || 0,
             historial: (meta.historial || []).slice(-30)
         }])),
+        panelChartHistory,
         noticiasHistorial: noticiasHistorial.slice(0, 40),
         asesores: asesoresEstado,
         predicciones: prediccionesActivas,
@@ -1654,6 +1953,8 @@ async function guardar(propagateError = false) {
         avatarSeleccionado: avatarSeleccionado,
         preferencias: { moneda: monedaActual },
         plan: planActual,
+        planExpiresAt,
+        planMonthlyGrantAt,
         mascota: mascotaActual,
         publicId: idPublico,
         googleUserId: googleUserId,
@@ -1749,7 +2050,7 @@ function abrirPerfil() {
     const valores = {
         profileName: usuarioActual || 'Sin sesión',
         profilePublicId: formatearIdPublico(idPublico),
-        profilePlan: planActual && PLANES[planActual] ? `Plan ${PLANES[planActual].nombre}` : 'Plan sin elegir',
+        profilePlan: planActual && PLANES[planActual] ? `Plan ${PLANES[planActual].nombre} · ${obtenerVigenciaPlan(planActual)}` : 'Plan sin elegir',
         profileCapital: formatD(capital),
         profileNetWorth: formatD(calcNeto()),
         profileLevel: nivel,
@@ -1908,7 +2209,8 @@ function renderMascotas() {
         const extra = nivel >= 20 ? `MAX · Evolución completa · +${bonus}% de bonus` : `+${bonus}% de bonus de inversión`;
         perks.textContent = extra;
     }
-    const petBonus = planActual === 'pro' ? '+30% XP de mascota' : planActual === 'premium' ? '+15% XP de mascota' : 'Bonificación base';
+    const multiplicadorPlanActual = PLANES[planActual]?.multiplicadorXP || 1;
+    const petBonus = multiplicadorPlanActual > 1 ? `+${Math.round((multiplicadorPlanActual - 1) * 100)}% XP de mascota` : 'Bonificación base';
     const petValues = {
         profilePetSpecialty: mascota.especialidad,
         profilePetLevel: nivel,
@@ -2296,8 +2598,18 @@ setInterval(() => { if(usuarioActual) guardar(); }, 15000);
 // ==========================================
 // UTILIDADES DE CALCULO
 // ==========================================
-const formatD = (n) => new Intl.NumberFormat('es', {style:'currency', currency: monedaActual || 'USD'}).format(Number(n || 0) * (tiposCambio[monedaActual] || 1));
-const formatUSD = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n || 0));
+const formatD = (n) => new Intl.NumberFormat('es', { style: 'currency', currency: monedaActual || 'USD' }).format(safelyNumber(n) * (tiposCambio[monedaActual] || 1));
+const formatUSD = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(safelyNumber(n));
+const formatPrecioMercado = n => formatD(n);
+const formatCantidadAcciones = cantidad => new Intl.NumberFormat('es', { maximumSignificantDigits: 2 }).format(safelyNumber(cantidad));
+const formatTenenciaAcciones = cantidad => {
+    const total = safelyNumber(cantidad);
+    const enteras = Math.floor(total);
+    const fraccion = total - enteras;
+    const porcentaje = valor => (valor * 100).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (total < 1) return `${porcentaje(total)}% de una acción`;
+    return `${enteras.toLocaleString('es-CO')} ${enteras === 1 ? 'acción' : 'acciones'}${fraccion >= 0.00005 ? ` + ${porcentaje(fraccion)}% de otra` : ''}`;
+};
 
 function formatearMontoInversion(input) {
     const digits = String(input.value || '').replace(/\D/g, '');
@@ -4024,8 +4336,20 @@ function crearEventoEmpresa(empresa, plantilla, tituloPersonalizado) {
     noticiasHistorial.unshift(noticia);
     if (noticiasHistorial.length > 40) noticiasHistorial.pop();
     mostrarNoticiaMercado(noticia, `${impacto >= 0 ? '+' : ''}${(impacto * 100).toFixed(1)}%`);
+    if (usuarioActual) guardar();
     toast(`${plantilla.tipo === 'positivo' ? '📈' : '📉'} ${empresa}: ${noticia.titulo}`, plantilla.tipo === 'positivo' ? 'success' : 'error');
     return true;
+}
+
+function restaurarHistorialNoticiasUI() {
+    const cont = document.getElementById('noticiasLista');
+    if (!cont) return;
+    cont.replaceChildren();
+    noticiasHistorial.slice(0, 10).reverse().forEach(noticia => {
+        const impacto = Number(noticia.impacto) || 0;
+        const impactoVisible = `${impacto >= 0 ? '+' : ''}${(impacto * 100).toFixed(1)}%`;
+        mostrarNoticiaMercado(noticia, impactoVisible);
+    });
 }
 
 function actualizarMercadoGlobal() {
@@ -4180,6 +4504,7 @@ function generarNoticia() {
     noticiasHistorial.unshift(noticiaObj);
     if (noticiasHistorial.length > 40) noticiasHistorial.pop();
     mostrarNoticiaMercado(noticiaObj, `${noticiaObj.impacto >= 0 ? '+' : ''}${(noticiaObj.impacto * 100).toFixed(1)}%`);
+    if (usuarioActual) guardar();
     toast(`${noticiaObj.tipo === 'positivo' ? '📈' : '📉'} ${emp}: ${noticiaObj.titulo}`, noticiaObj.tipo === 'positivo' ? 'success' : 'error');
 }
 
@@ -5075,6 +5400,7 @@ function updatePrecioEmpresa(emp) {
         precioUpdateTimers[emp] = setTimeout(() => updatePrecioEmpresa(emp), delay);
         return;
     }
+    try {
     if (usuarioActual) {
         let cat = meta.sector;
         let catMult = sectorBoost[cat] || 1.0;
@@ -5085,7 +5411,12 @@ function updatePrecioEmpresa(emp) {
 
         const mercadoMood = Number(mercadoGlobal.fuerza || 0);
         const sectorTrend = (catMult * newsMult - 1) * 0.0018;
-        const newsRecency = noticiasHistorial.filter(n => n.empresa === emp).slice(0, 3).reduce((acc, item) => acc + Number(item.impacto || 0), 0) * 0.35;
+        const newsRecency = Math.max(-0.0022, Math.min(0.0022,
+            noticiasHistorial
+                .filter(n => n.empresa === emp && safelyNumber(n.terminaEn) > ahora)
+                .slice(0, 3)
+                .reduce((acc, item) => acc + safelyNumber(item.impacto) * 0.01, 0)
+        ));
         const eventPressure = Number(meta.impulsoEvento || 0) * 0.9;
         const activeEventSectorImpact = eventoActivo && eventoActivo.impactosSectores
             ? Number(eventoActivo.impactosSectores[cat] || eventoActivo.impactosSectores[meta.sector] || 0) / 100
@@ -5111,10 +5442,10 @@ function updatePrecioEmpresa(emp) {
             noise
         ) * deltaSegundos * 1.8;
 
-        let oldPrice = preciosMercado[emp];
+        let oldPrice = safelyNumber(preciosMercado[emp]) || safelyNumber(meta.basePrice);
         let newPrice = oldPrice * (1 + variacion);
         let precioMinimo = Math.max(0.00001, meta.basePrice * 0.03);
-        let precioMaximo = Math.max(meta.basePrice * 25, meta.basePrice + 1);
+        let precioMaximo = Math.max(meta.basePrice * 2, meta.basePrice + 1);
         newPrice = Math.max(precioMinimo, Math.min(precioMaximo, newPrice));
         preciosMercado[emp] = newPrice;
 
@@ -5123,16 +5454,47 @@ function updatePrecioEmpresa(emp) {
         if (meta.historial.length > 30) meta.historial.shift();
 
         meta.recuperacion = Math.abs(recovery) > 0.00001 ? recovery * 0.9 : 0;
+        if (portafolio[emp]) {
+            actualizarGraficaPanel(obtenerPromedioGeneralPanel());
+            actualizarChartPortafolio();
+            actualizarEmpresasPanel();
+            const portfolioSafeId = obtenerIdSeguro(emp);
+            const posicion = portafolio[emp];
+            const rendimiento = calcularRendimientoPct(newPrice, posicion.precioCompra);
+            const ganancias = (newPrice - safelyNumber(posicion.precioCompra)) * safelyNumber(posicion.cant);
+            const valorActualPosicion = newPrice * safelyNumber(posicion.cant);
+            const portfolioPriceEl = document.getElementById(`portfolio-price-${portfolioSafeId}`);
+            const portfolioValueEl = document.getElementById(`portfolio-value-${portfolioSafeId}`);
+            const portfolioYieldEl = document.getElementById(`portfolio-yield-${portfolioSafeId}`);
+            const portfolioProfitEl = document.getElementById(`portfolio-profit-${portfolioSafeId}`);
+            if (portfolioPriceEl) {
+                portfolioPriceEl.innerText = formatD(newPrice);
+            }
+            if (portfolioValueEl) portfolioValueEl.innerText = formatD(valorActualPosicion);
+            if (portfolioYieldEl) {
+                portfolioYieldEl.innerText = `${rendimiento.toFixed(2)}%`;
+                portfolioYieldEl.style.color = rendimiento >= 0 ? 'var(--success)' : 'var(--danger)';
+            }
+            if (portfolioProfitEl) {
+                portfolioProfitEl.innerText = formatD(ganancias);
+                portfolioProfitEl.style.color = ganancias >= 0 ? 'var(--success)' : 'var(--danger)';
+            }
+            const balancePanel = document.getElementById('balance');
+            if (balancePanel) balancePanel.innerText = formatD(calcNeto());
+        }
 
         let safeId = obtenerIdSeguro(emp);
-        let priceEl = document.getElementById(`price-${safeId}`);
-        if (priceEl) {
-            priceEl.innerText = formatD(newPrice);
-        }
+        document.querySelectorAll(`[id="price-${safeId}"]`).forEach(priceEl => {
+            priceEl.innerText = formatPrecioMercado(newPrice);
+        });
         let arrow = pctChange >= 0 ? "▲" : "▼";
-        let arrowEl = document.getElementById(`arrow-${safeId}`);
-        if (arrowEl) arrowEl.innerText = arrow;
+        document.querySelectorAll(`[id="arrow-${safeId}"]`).forEach(arrowEl => {
+            arrowEl.innerText = arrow;
+        });
         actualizarPreciosCooperativos(emp);
+    }
+    } catch (error) {
+        console.error(`[Mercado] No se pudo actualizar ${emp}; se reintentará:`, error);
     }
     let delay = getRandomPrecioDelayMs();
     precioUpdateTimers[emp] = setTimeout(() => updatePrecioEmpresa(emp), delay);
@@ -5191,7 +5553,7 @@ function dibujarTienda() {
                 </div>
                 <div class="company-price">
                     <div class="price-label">Precio por acción</div>
-                    <div class="price-tag" id="price-${safeId}">${formatD(preciosMercado[emp])}</div>
+                    <div class="price-tag" id="price-${safeId}">${formatPrecioMercado(preciosMercado[emp])}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                     <span class="trend-arrow" id="arrow-${safeId}" style="color:${trendColor};">${arrow}</span>
@@ -5231,10 +5593,10 @@ function refreshConfirmModal() {
         const p = portafolio[ventaPendiente];
         if (!p) return;
         const precio = preciosMercado[ventaPendiente] || 0;
-        const ingreso = precio * p.cant;
-        const costoTotal = p.precioCompra * p.cant;
+        const ingreso = safelyNumber(precio) * safelyNumber(p.cant);
+        const costoTotal = safelyNumber(p.precioCompra) * safelyNumber(p.cant);
         const beneficio = ingreso - costoTotal;
-        const rendPct = ((precio - p.precioCompra) / p.precioCompra * 100).toFixed(2);
+        const rendPct = calcularRendimientoPct(precio, p.precioCompra).toFixed(2);
         const ingresoEl = document.getElementById("modalIngresoInfo");
         if (ingresoEl) ingresoEl.innerText = formatD(ingreso);
         const rendSpan = document.getElementById("modalRendimientoInfo");
@@ -5338,23 +5700,27 @@ function confirmarModalAccion() {
 }
 
 function comprarAccion(empresa, montoInput) {
-    let precio = preciosMercado[empresa] || 0;
+    let precio = safelyNumber(preciosMercado[empresa]);
+    if (precio <= 0) return toast("El precio de esta acción no está disponible.", "error");
     let cant = 0;
     let amountValue = montoInput !== undefined && montoInput !== null ? montoInput : '';
     let isMax = String(amountValue).trim().toUpperCase() === "MAX";
     if (isMax) {
-        cant = Math.round((capital / precio) * 10000) / 10000;
+        cant = capital / precio;
         if (cant <= 0) return toast("Capital insuficiente", "error");
     } else {
         let monto = parseFloat(amountValue);
         if (!isNaN(monto) && monto > 0) {
-            cant = Math.round((monto / precio) * 10000) / 10000;
-            if (cant <= 0) return toast(`Con ${formatD(monto)} no alcanza para 1 acción de ${empresa}.`, "error");
+            cant = monto / precio;
         } else {
-            cant = Math.round((1 / precio) * 10000) / 10000;
+            cant = 1 / precio;
         }
     }
     let costo = precio * cant;
+    if (costo > capital && costo - capital <= Number.EPSILON * Math.max(1, capital)) {
+        costo = capital;
+        cant = costo / precio;
+    }
     if (capital < costo) return toast("Fondos insuficientes", "error");
     if (cant <= 0) return toast("Cantidad invalida", "error");
 
@@ -5380,7 +5746,7 @@ function comprarAccion(empresa, montoInput) {
     subirXP(Math.max(1, Math.round(cant * 0.5)));
 
 
-    toast(`Compraste ${cant} de ${empresa} (${empresaMeta[empresa].sector})`, "success");
+    toast(`Compraste ${formatCantidadAcciones(cant)} de ${empresa} (${empresaMeta[empresa].sector})`, "success");
     
     // Check desafios
     checkDesafio("comprar", 1);
@@ -5403,16 +5769,16 @@ function venderAccion(empresa) {
     resetModalConfirmState();
     let p = portafolio[empresa];
     if (!p) return;
-    let ingreso = preciosMercado[empresa] * p.cant;
-    let costoTotal = p.precioCompra * p.cant;
+    let ingreso = safelyNumber(preciosMercado[empresa]) * safelyNumber(p.cant);
+    let costoTotal = safelyNumber(p.precioCompra) * safelyNumber(p.cant);
     let beneficio = ingreso - costoTotal;
-    let rendPct = ((preciosMercado[empresa] - p.precioCompra) / p.precioCompra * 100).toFixed(2);
+    let rendPct = calcularRendimientoPct(preciosMercado[empresa], p.precioCompra).toFixed(2);
 
     ventaPendiente = empresa;
     modalActionType = 'venta';
     document.getElementById("modalTitle").innerText = "Confirmar Venta";
     document.getElementById("modalText").innerHTML = `
-        Vas a vender <b>${p.cant}</b> acciones de <b>${empresa}</b>.<br><br>
+        Vas a vender <b>${formatCantidadAcciones(p.cant)}</b> acciones de <b>${empresa}</b>.<br><br>
         Ingreso estimado: <b id="modalIngresoInfo">${formatD(ingreso)}</b><br>
         Rendimiento: <span id="modalRendimientoInfo" style="color:${beneficio>=0?'var(--success)':'var(--danger)'}">${rendPct}% (${formatD(beneficio)})</span>
     `;
@@ -5463,7 +5829,7 @@ function confirmarVenta() {
     // Check desafios
     checkDesafio("vender", 1);
     checkDesafio("ganancia_venta", beneficio);
-    checkDesafio("rendimiento", parseFloat(((preciosMercado[empresa] - p.precioCompra) / p.precioCompra * 100).toFixed(2)));
+    checkDesafio("rendimiento", parseFloat(calcularRendimientoPct(preciosMercado[empresa], p.precioCompra).toFixed(2)));
     checkDesafio("operaciones", 1);
 
     cerrarModal();
@@ -5479,6 +5845,38 @@ function cerrarModal() {
 // ==========================================
 // ACTUALIZACION GLOBAL DE UI
 // ==========================================
+function actualizarEmpresasPanel() {
+    const panelEmpresas = document.getElementById('panelEmpresas');
+    if (!panelEmpresas) return;
+
+    const empresasPanel = Object.keys(portafolio);
+    const contadorEmpresas = document.getElementById('panelCompanyCount');
+    if (contadorEmpresas) contadorEmpresas.textContent = String(empresasPanel.length).padStart(2, '0');
+    if (empresasPanel.length === 0) {
+        panelEmpresas.innerHTML = '<p class="dashboard-company-empty">Aún no tienes posiciones abiertas.</p>';
+        return;
+    }
+
+    panelEmpresas.innerHTML = empresasPanel.map(empresa => {
+        const precioActual = safelyNumber(preciosMercado[empresa]);
+        const posicion = portafolio[empresa];
+        const cantidad = safelyNumber(posicion.cant);
+        const precioCompra = safelyNumber(posicion.precioCompra);
+        const valorInversion = cantidad * precioCompra;
+        const valorActual = cantidad * precioActual;
+        const tenencia = formatTenenciaAcciones(cantidad);
+        const rendimiento = calcularRendimientoPct(precioActual, posicion.precioCompra);
+        const tendencia = rendimiento >= 0 ? 'positive' : 'negative';
+        const indicador = rendimiento >= 0 ? '▲' : '▼';
+
+        return `<article class="dashboard-company-row">
+            <span class="dashboard-company-logo"><img src="${getEmpresaLogo(empresa)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';"></span>
+            <span class="dashboard-company-name"><strong>${empresa}</strong><span class="dashboard-company-ownership"><small>Tenencia</small><b>${tenencia}</b></span></span>
+            <span class="dashboard-company-value"><strong>${formatD(valorInversion)}</strong><small>Total invertido</small><strong>${formatD(valorActual)}</strong><small>Valor actual</small><span class="dashboard-company-yield ${tendencia}">${indicador} ${Math.abs(rendimiento).toFixed(2)}%</span></span>
+        </article>`;
+    }).join('');
+}
+
 function actualizarTodo() {
     let valorActivos = Object.keys(portafolio).reduce((acc, e) => acc + (portafolio[e].cant * preciosMercado[e]), 0);
     let neto = getCapitalConTarjeta() + valorActivos - deuda;
@@ -5488,9 +5886,12 @@ function actualizarTodo() {
     actualizarImportesMoneyShop();
     document.getElementById("panelCapital").innerText = formatD(capitalVisible);
     document.getElementById("ganancias").innerText = formatD(gananciasTotal);
+    const panelDividendos = document.getElementById("panelDividendos");
+    if (panelDividendos) panelDividendos.innerText = formatD(dividendosTotal);
     document.getElementById("perdidas").innerText = formatD(perdidasTotal);
     document.getElementById("panelDeuda").innerText = formatD(deuda);
     document.getElementById("balance").innerText = formatD(neto);
+    actualizarEmpresasPanel();
     document.getElementById("nivelHeader").innerText = nivel;
     document.getElementById("capitalPortafolio").innerText = formatD(capitalVisible);
     document.getElementById("totalInv").innerText = totalInv;
@@ -5520,16 +5921,17 @@ function actualizarTodo() {
             
             empresasPortafolio.forEach(emp => {
                 let p = portafolio[emp];
-                let actual = preciosMercado[emp];
-                let rend = ((actual - p.precioCompra) / p.precioCompra * 100);
-                let totalVal = p.cant * actual;
+                let actual = safelyNumber(preciosMercado[emp]);
+                let rend = calcularRendimientoPct(actual, p.precioCompra);
+                let totalVal = safelyNumber(p.cant) * actual;
+                let totalInvertido = safelyNumber(p.cant) * safelyNumber(p.precioCompra);
                 let meta = empresaMeta[emp];
                 let spark = meta.historial.map((v,i) => {
                     let h = Math.max(10, Math.min(30, 15 + v*3));
                     let col = v >= 0 ? 'var(--success)' : 'var(--danger)';
                     return `<div style="display:inline-block;width:3px;height:${h}px;background:${col};margin-right:2px;border-radius:1px;opacity:${0.4 + (i/10)};"></div>`;
                 }).join('');
-                let ganancias = (actual - p.precioCompra) * p.cant;
+                let ganancias = (actual - safelyNumber(p.precioCompra)) * safelyNumber(p.cant);
                 let tr = document.createElement("tr");
                 tr.innerHTML = `
                     <td>
@@ -5542,11 +5944,13 @@ function actualizarTodo() {
                             </div>
                         </div>
                     </td>
-                    <td>${p.cant}</td>
+                    <td>${formatTenenciaAcciones(p.cant)}</td>
                     <td>${formatD(p.precioCompra)}</td>
-                    <td style="color:${actual>=p.precioCompra?'var(--success)':'var(--danger)'}">${formatD(actual)}</td>
-                    <td style="color:${rend>=0?'var(--success)':'var(--danger)'}">${rend.toFixed(2)}%</td>
-                    <td style="color:${ganancias>=0?'var(--success)':'var(--danger)'}">${formatD(ganancias)}</td>
+                    <td id="portfolio-price-${obtenerIdSeguro(emp)}" style="color:#fff">${formatD(actual)}</td>
+                    <td>${formatD(totalInvertido)}</td>
+                    <td id="portfolio-value-${obtenerIdSeguro(emp)}">${formatD(totalVal)}</td>
+                    <td id="portfolio-yield-${obtenerIdSeguro(emp)}" style="color:${rend>=0?'var(--success)':'var(--danger)'}">${rend.toFixed(2)}%</td>
+                    <td id="portfolio-profit-${obtenerIdSeguro(emp)}" style="color:${ganancias>=0?'var(--success)':'var(--danger)'}">${formatD(ganancias)}</td>
                     <td>${spark}</td>
                     <td><button class="btn-vender" onclick="event.stopPropagation(); venderAccion('${emp}')">Vender</button></td>
                 `;
@@ -5572,18 +5976,7 @@ function actualizarTodo() {
     else if (neto > 500000) { txt.innerText = "📈 Inversor Exitoso"; txt.style.color = "var(--success)"; }
     else { txt.innerText = "📊 Cartera Estable — Sigue diversificando"; txt.style.color = "#aaa"; }
 
-    // Grafica
-    if (chartPanel) {
-        const delta = neto - startNetPanel;
-        chartPanel.data.datasets[0].data.push(delta);
-        chartPanel.data.labels.push("");
-        if (chartPanel.data.datasets[0].data.length > 30) {
-            chartPanel.data.datasets[0].data.shift();
-            chartPanel.data.labels.shift();
-        }
-        updateChartLineColor(chartPanel);
-        chartPanel.update('none');
-    }
+    actualizarGraficaPanel(obtenerPromedioGeneralPanel());
 
     actualizarChartPortafolio();
     actualizarInfoBancos();
@@ -5648,7 +6041,7 @@ function renderMercadoCompleto() {
                     <div class="mercado-company-name" style="color:${data.color};">${emp}</div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
-                    <span class="price-tag" id="price-${safeId}" style="color:${displayColor}; font-size:0.9em; font-weight:800;">${formatD(p)}</span>
+                    <span class="price-tag" id="price-${safeId}" style="color:${displayColor}; font-size:0.9em; font-weight:800;">${formatPrecioMercado(p)}</span>
                     <span class="trend-arrow" id="trend-arrow-${safeId}" style="color:${displayColor}; font-size:0.95em; font-weight:800;">${arrow}</span>
                     <span class="trend-pct" id="trend-pct-${safeId}" style="color:${displayColor}; font-size:0.75em; font-weight:700;">${trendPct}%</span>
                 </div>
@@ -5686,7 +6079,7 @@ setInterval(() => {
             const trendPctEl = card.querySelector('.trend-pct');
             const volTag = card.querySelector('.volat-tag');
 
-            if (priceTag) priceTag.innerText = formatD(p);
+            if (priceTag) priceTag.innerText = formatPrecioMercado(p);
             if (arrowEl) {
                 arrowEl.innerText = arrow;
                 arrowEl.style.color = displayColor;
@@ -7633,17 +8026,60 @@ function updatePromedioPortafolioDataset() {
     });
 }
 
+function crearHistorialInicialPortafolio() {
+    const empresas = Object.keys(portafolio);
+    const historiales = empresas.map(empresa => (empresaMeta[empresa]?.historial || []).slice(-30));
+    const cantidadPuntos = Math.max(0, ...historiales.map(historial => historial.length));
+    const labels = Array.from({ length: cantidadPuntos + 1 }, (_, index) => index === 0 ? 'Inicio' : '');
+    const datasets = empresas.map((empresa, empresaIndex) => {
+        const cambios = historiales[empresaIndex];
+        const posicion = portafolio[empresa];
+        const precioActual = Number(preciosMercado[empresa]) || 0;
+        const precios = Array(cambios.length + 1).fill(0);
+        precios[precios.length - 1] = precioActual;
+
+        for (let index = cambios.length - 1; index >= 0; index--) {
+            const factor = 1 + (Number(cambios[index]) || 0) / 100;
+            precios[index] = factor > 0 ? precios[index + 1] / factor : precios[index + 1];
+        }
+
+        const precioCompra = Number(posicion.precioCompra) || precioActual;
+        const rendimientos = precios.map(precio => {
+            const rendimiento = calcularRendimientoPct(precio, precioCompra);
+            return Number.isFinite(rendimiento) ? Math.round(rendimiento * 100) / 100 : 0;
+        });
+        const padding = cantidadPuntos - cambios.length;
+        const color = CATEGORIAS[empresaMeta[empresa]?.sector]?.color || '#00d4ff';
+
+        return {
+            label: empresa,
+            data: [...Array(padding).fill(null), ...rendimientos],
+            borderColor: color,
+            _baseBorderColor: color,
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            tension: 0.2,
+            fill: false,
+            borderWidth: 3,
+            pointRadius: 0,
+            pointHoverRadius: 6
+        };
+    });
+
+    return { labels, datasets };
+}
+
 function initChartPortafolio() {
     if (typeof Chart === 'undefined') return;
     const ctxPortafolio = document.getElementById('graficaPortafolio');
     if (!ctxPortafolio) return;
     if (chartPortafolio) { chartPortafolio.destroy(); chartPortafolio = null; }
     startNetPortfolio = getPatrimonioNeto() || 10000;
+    const historialPortafolio = crearHistorialInicialPortafolio();
     chartPortafolio = new Chart(ctxPortafolio, {
         type: 'line',
         data: {
-            labels: ['Inicio'],
-            datasets: []
+            labels: historialPortafolio.labels,
+            datasets: historialPortafolio.datasets
         },
         options: {
             responsive: true,
@@ -7722,8 +8158,8 @@ function actualizarChartPortafolio() {
 
     Object.keys(portafolio).forEach(emp => {
         let dataset = chartPortafolio.data.datasets.find(d => d.label === emp);
-        let precioCompra = portafolio[emp].precioCompra || preciosMercado[emp];
-        let rendimiento = precioCompra ? ((preciosMercado[emp] - precioCompra) / precioCompra) * 100 : 0;
+        let precioCompra = safelyNumber(portafolio[emp].precioCompra) || safelyNumber(preciosMercado[emp]);
+        let rendimiento = calcularRendimientoPct(preciosMercado[emp], precioCompra);
         rendimiento = Math.round(rendimiento * 100) / 100;
         if (!dataset) {
             let sector = empresaMeta[emp]?.sector;

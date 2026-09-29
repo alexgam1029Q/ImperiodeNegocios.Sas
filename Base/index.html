@@ -357,49 +357,82 @@
     <div class="main">
 
         <!-- PANEL GENERAL -->
-        <div id="panel">
-            <!-- Logo watermark -->
-            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.02; font-size:20em; z-index:0; pointer-events:none;">🏦</div>
-            <div class="card">
-                <h2 style="color: var(--primary); margin-top: 0;">📊 Panel de Control</h2>
-                <div class="stats-grid">
-                    <div class="stat-box capital">
-                        <div class="stat-label">Capital Disponible</div>
-                        <div class="stat-value" id="panelCapital">$100,000.00</div>
-                    </div>
-                    <div class="stat-box ganancia">
-                        <div class="stat-label">Ganancias Totales</div>
-                        <div class="stat-value" id="ganancias" style="color: var(--success);">$0.00</div>
-                    </div>
-                    <div class="stat-box perdida">
-                        <div class="stat-label">Perdidas Totales</div>
-                        <div class="stat-value" id="perdidas" style="color: var(--danger);">$0.00</div>
-                    </div>
-                    <div class="stat-box deuda">
-                        <div class="stat-label">Deuda Pendiente</div>
-                        <div class="stat-value" id="panelDeuda" style="color: var(--warning);">$0.00</div>
-                    </div>
-                    <div class="stat-box balance">
-                        <div class="stat-label">Patrimonio Neto</div>
-                        <div class="stat-value" id="balance" style="color: var(--primary);">$100,000.00</div>
-                    </div>
+        <div id="panel" class="dashboard-panel">
+            <div class="dashboard-heading">
+                <div>
+                    <span class="dashboard-kicker">CENTRO FINANCIERO</span>
+                    <h2>Panel general</h2>
+                </div>
+                <span class="dashboard-live"><i></i> Resumen de cuenta</span>
+            </div>
+
+            <div class="stats-grid dashboard-stats">
+                <div class="stat-box capital">
+                    <div class="stat-label">Capital disponible</div>
+                    <div class="stat-value" id="panelCapital">6042,72 US$</div>
+                </div>
+                <div class="stat-box ganancia">
+                    <div class="stat-label">Ganancias totales</div>
+                    <div class="stat-value" id="ganancias">1360,45 US$</div>
+                </div>
+                <div class="stat-box dividendos">
+                    <div class="stat-label">Dividendos recibidos</div>
+                    <div class="stat-value" id="panelDividendos">0,00 US$</div>
+                </div>
+                <div class="stat-box perdida">
+                    <div class="stat-label">Pérdidas totales</div>
+                    <div class="stat-value" id="perdidas">0,00 US$</div>
+                </div>
+                <div class="stat-box deuda">
+                    <div class="stat-label">Deuda pendiente</div>
+                    <div class="stat-value" id="panelDeuda">0,00 US$</div>
                 </div>
             </div>
-            <div class="card">
-                <canvas id="graficaPanel"></canvas>
-            </div>
-            
-            <div class="card">
-                <h3 style="color: var(--primary); margin-top: 0;">🧠 Estado Financiero</h3>
-                <p id="estadoTexto" style="font-size: 1.1em; color: #aaa;">Analizando...</p>
-                <div id="eventoMundial" class="evento-box">
-                    <div id="eventoMundialTexto"></div>
-                    <div class="evento-timer-bar"><div class="evento-timer-fill" id="eventoTimer" style="width: 100%"></div></div>
+
+            <section class="dashboard-net-worth" aria-labelledby="dashboardNetWorthTitle">
+                <div>
+                    <span class="dashboard-kicker">VALOR TOTAL DE LA CUENTA</span>
+                    <h3 id="dashboardNetWorthTitle">Patrimonio neto</h3>
                 </div>
-            </div>
-            <div class="card">
-                <h3 style="color: var(--primary); margin-top: 0;">🏆 Logros Recientes</h3>
-                <div id="logrosPanelMini" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+                <strong id="balance">6083,16 US$</strong>
+            </section>
+
+            <div class="dashboard-workspace">
+                <div class="dashboard-main-column">
+                    <section class="card dashboard-chart-card" aria-labelledby="dashboardChartTitle">
+                        <div class="chart-control-row dashboard-panel-chart-controls">
+                            <button class="btn-secondary active" id="btnPanelAverage" type="button" onclick="setPortafolioChartMode('average')">Promedio general</button>
+                            <span id="panelModeLabel">Promedio general</span>
+                        </div>
+                        <div class="dashboard-chart-wrap"><canvas id="graficaPanel"></canvas></div>
+                        <div class="dashboard-history-control">
+                            <label for="panelChartHistoryRange">HISTORIAL</label>
+                            <input id="panelChartHistoryRange" type="range" min="0" max="0" value="0" disabled oninput="deslizarGraficaPanel(this.value)" aria-label="Deslizar historial de la gráfica">
+                            <output id="panelChartHistoryState">En vivo</output>
+                        </div>
+                    </section>
+
+                    <section class="card dashboard-financial-card" aria-labelledby="dashboardFinancialTitle">
+                        <div class="dashboard-section-heading">
+                            <h3 id="dashboardFinancialTitle">Estado Financiero</h3>
+                            <span class="dashboard-status-mark" aria-hidden="true">↗</span>
+                        </div>
+                        <p id="estadoTexto">Analizando...</p>
+                        <div id="eventoMundial" class="evento-box">
+                            <div class="dashboard-event-label">Catalizador de mercado</div>
+                            <div id="eventoMundialTexto"></div>
+                            <div class="evento-timer-bar"><div class="evento-timer-fill" id="eventoTimer" style="width: 100%"></div></div>
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="card dashboard-companies-card" aria-labelledby="dashboardCompaniesTitle">
+                    <div class="dashboard-section-heading">
+                        <h3 id="dashboardCompaniesTitle">Empresas del portafolio</h3>
+                        <span id="panelCompanyCount" class="dashboard-company-count">01</span>
+                    </div>
+                    <div id="panelEmpresas" class="dashboard-company-list"></div>
+                </aside>
             </div>
         </div>
 
@@ -432,9 +465,11 @@
                         <thead>
                             <tr>
                                 <th>Empresa</th>
-                                <th>Acciones</th>
-                                <th>Costo Prom.</th>
-                                <th>Precio Act.</th>
+                                <th>Tenencia</th>
+                                <th>Costo prom./acción</th>
+                                <th>Precio actual/acción</th>
+                                <th>Total invertido</th>
+                                <th>Valor actual</th>
                                 <th>Rend %</th>
                                 <th>Ganancias</th>
                                 <th>Tendencia</th>
@@ -876,7 +911,7 @@
     <script defer src="js/services/db.js?v=69"></script>
     <script defer src="js/data/gameData.js?v=69"></script>
     <script defer src="js/core/eventEngine.js?v=1"></script>
-    <script defer src="js/core/app.js?v=117"></script>
+    <script defer src="js/core/app.js?v=130"></script>
     <script>
         window.addEventListener('load', () => {
             const tieneCallbackOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
