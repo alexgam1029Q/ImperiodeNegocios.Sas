@@ -29,7 +29,7 @@
     window.PAYPAL_CLIENT_ID = 'AWDDh1hhcWyVlnUlfg8zUFUjUUfWXsgCSKK5yWr61VTbKfRVAB17FUCVvXHNFeVt6hLJi5YwRC2Sf7qw';
     window.PAYPAL_CURRENCY = 'USD';
 </script>
-<link rel="stylesheet" href="css/styles.css?v=34">
+<link rel="stylesheet" href="css/styles.css?v=26">
 </head>
 <body>
 
@@ -43,20 +43,6 @@
         <div class="modal-actions">
             <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
             <button class="btn-confirm" id="modalConfirmBtn" onclick="confirmarModalAccion()">Confirmar</button>
-        </div>
-    </div>
-</div>
-
-<div id="welcomeModal" class="modal-overlay welcome-modal" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle" aria-describedby="welcomeMessage" onclick="if(event.target===this)cerrarBienvenidaImperio()">
-    <div class="modal-box welcome-modal-box">
-        <button class="modal-close" type="button" onclick="cerrarBienvenidaImperio()" aria-label="Cerrar">×</button>
-        <div class="preferences-kicker">Imperio de Negocios</div>
-        <h2 class="welcome-modal-title" id="welcomeTitle">¡Bienvenido a Imperio de Negocios!</h2>
-        <p class="modal-text" id="welcomeMessage">Aprende a invertir, gestiona tu capital y construye tu estrategia empresarial. ¡Tu imperio comienza hoy! Toma decisiones, descubre oportunidades y convierte tus ideas en grandes negocios.</p>
-        <audio id="welcomeAudio" preload="auto" src="assets/audio/bienvenida-imperio.mp3"></audio>
-        <div class="modal-actions">
-            <button id="welcomeAudioButton" class="btn-cancel" type="button" aria-pressed="false" onclick="toggleBienvenidaAudio()">▶ Escuchar bienvenida</button>
-            <button class="btn-confirm" type="button" onclick="cerrarBienvenidaImperio()">Continuar</button>
         </div>
     </div>
 </div>
@@ -113,7 +99,6 @@
         </div>
         <button class="settings-action-btn settings-delete-btn" onclick="securityDeleteAction()">Eliminar cuenta</button>
         <button class="settings-more-btn" type="button" onclick="abrirMasAjustes()">Más ajustes</button>
-        <small class="creator-credit">Creado por Jonathan</small>
     </div>
 </div>
 
@@ -150,7 +135,6 @@
         </div>
         <button type="button" class="profile-customize-btn" onclick="abrirSelectorPlan()">Cambiar plan</button>
         <div class="settings-extra-placeholder">Aquí añadiremos las próximas opciones de configuración.</div>
-        <small class="creator-credit">Creado por Jonathan</small>
     </div>
 </div>
 
@@ -270,7 +254,6 @@
     <div class="login-box">
         <h1 style="color: var(--primary); font-size: 22px; letter-spacing: 2px; margin: 0 0 25px; text-align: center; text-shadow: 0 0 10px var(--primary);">IMPERIO DE NEGOCIOS</h1>
     </div>
-    <small class="creator-credit creator-credit--screen">Creado por Jonathan</small>
 </div>
 
 <!-- Preferencias iniciales -->
@@ -279,15 +262,14 @@
         <div class="preferences-kicker">Configuración inicial</div>
         <h1>Personaliza tu imperio</h1>
         <p class="preferences-intro">Elige cómo quieres ver tus operaciones antes de entrar al mercado.</p>
-        <button type="button" class="setup-voice-button" data-guia-paso="preferencias" onclick="alternarVozGuia('preferencias')">🔊 Escuchar guía de usuario y moneda</button>
         <div id="usernameField" class="preference-field google-username-field" style="display:none;">
             <label for="usernameInput">Nombre de usuario</label>
-            <input id="usernameInput" type="text" minlength="3" maxlength="20" autocomplete="username" placeholder="Elige tu nombre de usuario" onfocus="hablarGuiaConfiguracion('usuario')">
+            <input id="usernameInput" type="text" minlength="3" maxlength="20" autocomplete="username" placeholder="Elige tu nombre de usuario">
             <div id="usernameError" class="google-username-error" role="alert"></div>
         </div>
         <div class="preference-field">
             <label for="currencySelect">Moneda</label>
-            <select id="currencySelect" onchange="hablarGuiaConfiguracion('divisa')">
+            <select id="currencySelect">
                 <option value="USD">USD · Dólar estadounidense</option>
                 <option value="COP">COP · Peso colombiano</option>
                 <option value="EUR">EUR · Euro</option>
@@ -313,7 +295,6 @@
         </div>
         <button onclick="confirmarPreferencias()">Continuar al imperio</button>
     </div>
-    <small class="creator-credit creator-credit--screen">Creado por Jonathan</small>
 </div>
 
 <!-- Selección de plan -->
@@ -323,11 +304,9 @@
         <div class="preferences-kicker">Tu punto de partida</div>
         <h1>Elige tu plan</h1>
         <p class="preferences-intro">Todos los planes incluyen el juego completo y todas las funciones de inversión.</p>
-        <button type="button" class="setup-voice-button" data-guia-paso="suscripcion" onclick="alternarVozGuia('suscripcion')">🔊 Escuchar guía de suscripciones</button>
         <div id="plansGrid" class="plans-grid"></div>
         <button id="confirmPlanBtn" onclick="confirmarPlan()" disabled>Elegir plan</button>
     </div>
-    <small class="creator-credit creator-credit--screen">Creado por Jonathan</small>
 </div>
 
 <header>
@@ -426,7 +405,6 @@
                             <span id="panelModeLabel">Promedio general</span>
                         </div>
                         <div class="dashboard-chart-wrap"><canvas id="graficaPanel"></canvas></div>
-                        <p class="dashboard-chart-scale-hint">La escala en vivo se adapta al rendimiento reciente. Explora el historial para revisar los picos anteriores.</p>
                         <div class="dashboard-history-control">
                             <label for="panelChartHistoryRange">HISTORIAL</label>
                             <input id="panelChartHistoryRange" type="range" min="0" max="0" value="0" disabled oninput="deslizarGraficaPanel(this.value)" aria-label="Deslizar historial de la gráfica">
@@ -643,33 +621,6 @@
             </div>
         </div>
 
-        <!-- RETOS DE LA VIDA DIARIA -->
-        <div id="vida-diaria" class="hidden">
-            <section class="vida-hero">
-                <div class="vida-hero-copy">
-                    <span class="vida-kicker">SIMULADOR COTIDIANO · APRENDE TOMANDO DECISIONES</span>
-                    <h2>Entrena tus decisiones para la vida real</h2>
-                    <p>Arma presupuestos, compara compras y créditos, prepara metas y explora decisiones de inversión. Cada reto explica qué puedes aprender; no hay respuestas perfectas para todas las situaciones.</p>
-                </div>
-                <div class="vida-hero-rewards" aria-label="Recompensas disponibles">
-                    <span>💰 Hasta <strong id="vidaDineroDisponible">0</strong></span>
-                    <span>✨ Hasta <strong id="vidaXpDisponible">0 XP</strong></span>
-                </div>
-            </section>
-            <div class="vida-progress-card">
-                <div>
-                    <strong>Tu vuelta de hoy</strong>
-                    <span id="vidaProgresoTexto">0 de 12 retos completados</span>
-                </div>
-                <div class="vida-progress-track" role="progressbar" aria-label="Progreso de retos cotidianos" aria-valuemin="0" aria-valuemax="12" aria-valuenow="0">
-                    <div id="vidaProgresoBar"></div>
-                </div>
-                <p>Elige una categoría, explora los escenarios y escucha cualquier tarjeta con su botón. Las recompensas se pueden obtener una vez al día; las recomendaciones son educativas y debes adaptarlas a tu situación.</p>
-            </div>
-            <div id="vidaFiltros" class="vida-filters" aria-label="Filtrar retos por tema"></div>
-            <div id="vidaRetosGrid" class="vida-retos-grid"></div>
-        </div>
-
         <!-- MERCADO -->
         <div id="mercado" class="hidden">
             <div class="card">
@@ -785,7 +736,7 @@
         <div id="aprendizaje" class="hidden">
             <div class="card" style="padding-bottom: 10px;">
                 <h2 style="color: var(--primary); margin-top: 0;">📚 Wiki de Inversion</h2>
-                <p style="color: #888; font-size: 0.9em; margin-bottom: 20px;">Aprende a tomar mejores decisiones dentro del simulador. Pulsa «Escuchar artículo» en cualquier tarjeta para oír su contenido.</p>
+                <p style="color: #888; font-size: 0.9em; margin-bottom: 20px;">Aprende a tomar mejores decisiones dentro del simulador. Cada articulo se lee en menos de 30 segundos.</p>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
                     <button class="btn-filtro-wiki active" onclick="filtrarWiki('todos')">Todos</button>
                     <button class="btn-filtro-wiki" onclick="filtrarWiki('estrategia')">📈 Estrategias</button>
@@ -955,13 +906,12 @@
         </div>
 
     </div>
-    <footer class="creator-credit">Creado por Jonathan</footer>
 </div>
 
     <script defer src="js/services/db.js?v=69"></script>
-    <script defer src="js/data/gameData.js?v=70"></script>
+    <script defer src="js/data/gameData.js?v=69"></script>
     <script defer src="js/core/eventEngine.js?v=1"></script>
-    <script defer src="js/core/app.js?v=141"></script>
+    <script defer src="js/core/app.js?v=130"></script>
     <script>
         window.addEventListener('load', () => {
             const tieneCallbackOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
@@ -970,20 +920,7 @@
         });
         if ('serviceWorker' in navigator) {
             if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') {
-                let refreshing = false;
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.addEventListener('controllerchange', () => {
-                        if (refreshing) return;
-                        refreshing = true;
-                        window.location.reload();
-                    });
-                }
-                window.addEventListener('load', async () => {
-                    try {
-                        const registration = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
-                        await registration.update();
-                    } catch {}
-                });
+                window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=78').catch(() => {}));
             }
         }
     </script>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imperio-shell-v93';
+const CACHE_NAME = 'imperio-shell-v82';
 const APP_SHELL = [
     './',
     './index.html',
@@ -11,7 +11,6 @@ const APP_SHELL = [
     './json/manifest.webmanifest',
     './assets/logos/app-icon-192.png',
     './assets/logos/app-icon-512.png',
-    './assets/audio/bienvenida-imperio.mp3',
 ];
 
 self.addEventListener('install', event => {
@@ -34,7 +33,7 @@ self.addEventListener('fetch', event => {
     if (requestUrl.origin !== self.location.origin) return;
 
     event.respondWith(
-        fetch(event.request, { cache: 'no-cache' }).then(response => {
+        fetch(event.request).then(response => {
             const copy = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
             return response;

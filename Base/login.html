@@ -7,7 +7,7 @@
 <link rel="manifest" href="json/manifest.webmanifest">
 <meta name="theme-color" content="#06131f">
 <link rel="icon" type="image/png" href="assets/logos/app-icon-192.png">
-<link rel="stylesheet" href="css/styles.css?v=34">
+<link rel="stylesheet" href="css/styles.css?v=25">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
     window.SUPABASE_URL = 'https://chcuojprqzpiyknnkhwn.supabase.co';
@@ -40,26 +40,11 @@
         </button>
         <a href="registro.html" style="display:block; margin-top:18px; color:var(--primary); text-align:center;">Crear una cuenta</a>
     </div>
-    <small class="version-tag">Versión 3.0</small>
-    <small class="creator-credit creator-credit--screen">Creado por Jonathan</small>
 </div>
 <script>
     const message = document.getElementById('loginMessage');
     if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost' && 'serviceWorker' in navigator) {
-        let refreshing = false;
-        if (navigator.serviceWorker.controller) {
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (refreshing) return;
-                refreshing = true;
-                window.location.reload();
-            });
-        }
-        window.addEventListener('load', async () => {
-            try {
-                const registration = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
-                await registration.update();
-            } catch {}
-        });
+        navigator.serviceWorker.register('sw.js?v=78').catch(() => {});
     }
     document.getElementById('googleLoginButton').addEventListener('click', async () => {
         try { await db.signInWithGoogle(); } catch (error) { message.textContent = error.message || 'No se pudo iniciar sesión con Google.'; }

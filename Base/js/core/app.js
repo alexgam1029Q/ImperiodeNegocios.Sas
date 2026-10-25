@@ -720,468 +720,6 @@ let misionesReputacion = []; // Misiones activas de reputacion
 let desafiosDiarios = []; // Desafios diarios
 let desafiosCompletadosHoy = 0; // Contador
 let ultimaActualizacionDesafios = null; // Timestamp ultima actualizacion
-let progresoRetosHogar = { fecha: '', completados: [], respuestas: {} };
-
-const RETOS_HOGAR = [
-    {
-        id: 'gastos-hormiga',
-        emoji: '☕',
-        tipo: 'CAZAGASTOS',
-        categoria: 'Presupuesto',
-        titulo: 'Caza los gastos hormiga',
-        descripcion: 'Un café de {3} cada día laboral suma {60} al mes. ¿Qué cambio pequeño probarías?',
-        aprendizaje: 'Un gasto pequeño y frecuente puede tener un impacto grande. Registra tus gastos antes de decidir qué ajustar.',
-        recompensa: 120,
-        xp: 25,
-        opciones: [
-            { texto: 'Prepararlo en casa algunos días', resultado: '¡Buen plan! Si lo haces en casa 3 días por semana, podrías liberar cerca de {36} al mes.' },
-            { texto: 'Dejar de comprar cualquier gusto', resultado: 'No hace falta eliminar todos los gustos: elegir cuáles valen la pena suele ser más sostenible.' },
-            { texto: 'No revisar cuánto gasto', resultado: 'El primer paso es observar una semana de gastos; así puedes elegir un cambio que sí te funcione.' }
-        ]
-    },
-    {
-        id: 'reto-super',
-        emoji: '🛒',
-        tipo: 'RETO DEL SÚPER',
-        categoria: 'Consumo',
-        titulo: 'Compra con ojo de detective',
-        descripcion: '¿Qué opción cuesta menos por kilo: 1 kg por {3.2} o 1,5 kg por {4.2}?',
-        aprendizaje: 'Divide el precio entre la cantidad para comparar el costo por unidad. La opción grande solo conviene si vas a aprovecharla.',
-        recompensa: 150,
-        xp: 30,
-        opciones: [
-            { texto: 'La bolsa de 1 kg', resultado: 'Cuesta {3.2} por kilo. Comparar el precio por unidad ayuda a no dejarse llevar por el tamaño del empaque.' },
-            { texto: 'La bolsa de 1,5 kg', resultado: '¡Correcto! Sale a {2.8} por kilo. Solo conviene si vas a usar todo y no se desperdicia.' },
-            { texto: 'Cuestan igual', resultado: 'La bolsa grande sale a {2.8} por kilo y la pequeña a {3.2}. Revisa también si consumirás todo.' }
-        ]
-    },
-    {
-        id: 'suscripciones',
-        emoji: '📺',
-        tipo: 'LIMPIEZA DIGITAL',
-        categoria: 'Presupuesto',
-        titulo: '¿Quién se está comiendo tu saldo?',
-        descripcion: 'Hay una suscripción de video que nadie en casa ha usado en dos meses. ¿Qué harías?',
-        aprendizaje: 'Revisar cargos recurrentes ayuda a encontrar gastos olvidados. Comprueba las condiciones antes de cancelar.',
-        recompensa: 130,
-        xp: 25,
-        opciones: [
-            { texto: 'Revisar el historial y pausarla si no se usa', resultado: 'Buena decisión: revisar primero evita cancelar algo que sí necesitas y permite pausar lo que ya no usas.' },
-            { texto: 'Conservarla sin mirar el cobro', resultado: 'Los cargos pequeños se acumulan. Una revisión mensual de suscripciones puede encontrar gastos olvidados.' },
-            { texto: 'Cancelar todos los servicios de inmediato', resultado: 'Puede funcionar, pero revisa antes quién los usa y si hay penalizaciones o alternativas gratuitas.' }
-        ]
-    },
-    {
-        id: 'imprevisto',
-        emoji: '🧰',
-        tipo: 'PLAN B',
-        categoria: 'Ahorro',
-        titulo: '¡Se dañó algo en casa!',
-        descripcion: 'Una reparación cuesta {400}. Si quisieras reunirlo en 8 semanas, ¿cuánto separarías por semana?',
-        aprendizaje: 'Divide una meta entre el tiempo disponible para obtener un aporte periódico. Asegúrate de que el monto sea sostenible para ti.',
-        recompensa: 180,
-        xp: 35,
-        opciones: [
-            { texto: '{25} por semana', resultado: 'En 8 semanas juntarías {200}. Es un buen comienzo, aunque tomaría más tiempo alcanzar los {400}.' },
-            { texto: '{50} por semana', resultado: '¡Exacto! {50} durante 8 semanas suma {400}. Dividir una meta grande la hace más manejable.' },
-            { texto: '{100} por semana', resultado: 'Llegarías a {400} en 4 semanas. Es más rápido, pero el aporte debe caber en tu presupuesto.' }
-        ]
-    },
-    {
-        id: 'plan-salida',
-        emoji: '🎉',
-        tipo: 'PLAN SIN ESTRÉS',
-        categoria: 'Planificación',
-        titulo: 'Que el plan no te deje en ceros',
-        descripcion: 'Te invitaron a salir este fin de semana. ¿Cómo evitas gastar de más?',
-        aprendizaje: 'Planear un límite de gasto antes de salir permite disfrutar sin comprometer pagos importantes.',
-        recompensa: 140,
-        xp: 25,
-        opciones: [
-            { texto: 'Definir un tope antes de salir', resultado: '¡Gran idea! Un límite acordado de antemano permite disfrutar sin llevarse sorpresas.' },
-            { texto: 'Pagar todo con crédito y verlo después', resultado: 'Dejarlo para después puede convertir un plan divertido en una deuda difícil de controlar.' },
-            { texto: 'No ir nunca a ningún plan', resultado: 'Cuidar el presupuesto no significa dejar de disfrutar: puedes proponer una opción que se ajuste.' }
-        ]
-    },
-    {
-        id: 'meta-personal',
-        emoji: '🎯',
-        tipo: 'META A TU MANERA',
-        categoria: 'Ahorro',
-        titulo: 'Tu próxima meta empieza hoy',
-        descripcion: 'Quieres reunir {600} en 6 meses para algo que te hace ilusión. ¿Cuál es el aporte mensual?',
-        aprendizaje: 'Una meta clara se vuelve más alcanzable al dividirla en aportes periódicos que quepan en tu presupuesto.',
-        recompensa: 200,
-        xp: 40,
-        opciones: [
-            { texto: '{50} al mes', resultado: 'En 6 meses reunirías {300}. Puedes ajustar el plazo o buscar una cantidad mensual que te acerque más.' },
-            { texto: '{100} al mes', resultado: '¡Eso es! {100} al mes durante 6 meses suma {600}. También podrías automatizar ese aporte.' },
-            { texto: 'Ahorrar solo lo que sobre', resultado: 'A veces no sobra. Separar una cantidad realista al recibir ingresos puede ayudar a cumplir la meta.' }
-        ]
-    },
-    {
-        id: 'presupuesto-mensual',
-        emoji: '🧾',
-        tipo: 'ARMA TU PRESUPUESTO',
-        categoria: 'Presupuesto',
-        titulo: 'Tus ingresos tienen una misión',
-        descripcion: 'Recibes {1200} al mes y tus gastos esenciales son {800}. ¿Qué haces antes de decidir en qué usar el resto?',
-        aprendizaje: 'Un presupuesto empieza por ingresos y gastos reales. Reserva para obligaciones y prioridades antes de asignar el dinero restante.',
-        recompensa: 170,
-        xp: 32,
-        opciones: [
-            { texto: 'Anotar gastos y separar primero los pagos esenciales', resultado: '¡Buena jugada! Ver tus gastos reales te ayuda a decidir cuánto queda disponible sin comprometer necesidades.' },
-            { texto: 'Gastar el resto porque ya pagaste algunas cuentas', resultado: 'Todavía pueden faltar transporte, ahorro u otros pagos. Revisa el mes completo antes de gastar.' },
-            { texto: 'Copiar un presupuesto de otra persona', resultado: 'Un presupuesto debe adaptarse a tus ingresos, obligaciones y metas; el de otra persona puede no servirte.' }
-        ]
-    },
-    {
-        id: 'compara-credito',
-        emoji: '🧮',
-        tipo: 'DECISIÓN DE CRÉDITO',
-        categoria: 'Crédito',
-        titulo: 'El pago pequeño no siempre gana',
-        descripcion: 'Dos créditos ofrecen cuotas distintas. ¿Qué dato compararías para saber cuánto pagarás en total?',
-        aprendizaje: 'Compara tasa, comisiones, plazo y costo total. Una cuota baja puede implicar pagar durante más tiempo.',
-        recompensa: 190,
-        xp: 36,
-        opciones: [
-            { texto: 'El costo total, la tasa, las comisiones y el plazo', resultado: '¡Exacto! Mirar todas las condiciones permite comparar el costo completo, no solo la cuota mensual.' },
-            { texto: 'Solo el valor de la primera cuota', resultado: 'La primera cuota no muestra el costo total ni posibles comisiones. Revisa el contrato y el plazo.' },
-            { texto: 'Elegir el plazo más largo sin revisar intereses', resultado: 'Un plazo largo puede bajar la cuota, pero aumentar el total pagado. Calcula ambas cifras antes de elegir.' }
-        ]
-    },
-    {
-        id: 'fondo-emergencia',
-        emoji: '🛟',
-        tipo: 'ESCUDO FINANCIERO',
-        categoria: 'Ahorro',
-        titulo: 'Prepara tu plan para imprevistos',
-        descripcion: 'Este mes tuviste un gasto inesperado. ¿Qué hábito ayuda a prepararte para otro imprevisto?',
-        aprendizaje: 'Un fondo de emergencia se construye poco a poco, según tus posibilidades, y debe estar disponible cuando lo necesites.',
-        recompensa: 180,
-        xp: 34,
-        opciones: [
-            { texto: 'Separar una cantidad posible de forma periódica', resultado: '¡Buen comienzo! La constancia importa; puedes ajustar el aporte a tus ingresos y gastos.' },
-            { texto: 'Esperar a tener mucho dinero para empezar', resultado: 'No hace falta esperar: empezar con una cantidad pequeña puede crear el hábito y hacer crecer el fondo.' },
-            { texto: 'Poner todo el fondo en una inversión difícil de retirar', resultado: 'El dinero para emergencias debe ser accesible y considerar el riesgo; no comprometas todo en un activo volátil.' }
-        ]
-    },
-    {
-        id: 'compra-impulsiva',
-        emoji: '🛍️',
-        tipo: 'PAUSA INTELIGENTE',
-        categoria: 'Consumo',
-        titulo: '¿Oferta irresistible o compra impulsiva?',
-        descripcion: 'Ves un descuento por tiempo limitado en algo que no planeabas comprar. ¿Cómo decides con calma?',
-        aprendizaje: 'Un descuento solo ahorra dinero si la compra era necesaria o estaba planeada y cabe en tu presupuesto.',
-        recompensa: 160,
-        xp: 30,
-        opciones: [
-            { texto: 'Revisar si lo necesito y si estaba dentro del presupuesto', resultado: '¡Decisión consciente! Compara el precio y la necesidad; una oferta no convierte automáticamente algo en ahorro.' },
-            { texto: 'Comprar rápido para no perder la oferta', resultado: 'La urgencia puede llevar a compras que no necesitas. Tómate un momento para revisar tu presupuesto.' },
-            { texto: 'Pedir un préstamo para aprovechar el descuento', resultado: 'El costo del préstamo puede superar el descuento. Calcula el costo total antes de comprometerte.' }
-        ]
-    },
-    {
-        id: 'diversificar',
-        emoji: '🌱',
-        tipo: 'RIESGO Y DIVERSIFICACIÓN',
-        categoria: 'Inversión',
-        titulo: 'No pongas todos los huevos en una canasta',
-        descripcion: 'Una sola empresa ocupa casi todo tu portafolio. ¿Qué principio podrías estudiar antes de invertir más?',
-        aprendizaje: 'Diversificar distribuye la exposición entre activos; no elimina el riesgo ni garantiza ganancias. Infórmate y considera tu tolerancia al riesgo.',
-        recompensa: 210,
-        xp: 42,
-        opciones: [
-            { texto: 'Aprender sobre diversificación y los riesgos de cada activo', resultado: '¡Buen criterio! Diversificar puede reducir la dependencia de un activo, aunque no elimina las pérdidas posibles.' },
-            { texto: 'Comprar más de la misma empresa porque ya la conozco', resultado: 'Concentrar más dinero en un solo activo aumenta la dependencia de su desempeño. Evalúa alternativas y riesgos.' },
-            { texto: 'Invertir todo en lo que más subió esta semana', resultado: 'Una subida reciente no garantiza que continúe. Investiga antes de tomar decisiones y evita perseguir tendencias.' }
-        ]
-    },
-    {
-        id: 'compra-segura',
-        emoji: '🔐',
-        tipo: 'COMPRA SEGURA',
-        categoria: 'Seguridad digital',
-        titulo: 'Un mensaje urgente pide tu código',
-        descripcion: 'Recibes un mensaje que dice ser de tu banco y te pide un código para evitar el bloqueo de tu cuenta. ¿Qué haces?',
-        aprendizaje: 'No compartas contraseñas ni códigos de verificación. Verifica cualquier aviso entrando directamente a la app o contactando al banco por sus canales oficiales.',
-        recompensa: 175,
-        xp: 34,
-        opciones: [
-            { texto: 'No compartir el código y verificar desde los canales oficiales', resultado: '¡Buena decisión! No uses enlaces del mensaje y comprueba la alerta directamente en la app o el sitio oficial.' },
-            { texto: 'Enviar el código porque el mensaje parece urgente', resultado: 'La urgencia puede ser una señal de engaño. Los códigos de verificación son privados; nunca los compartas.' },
-            { texto: 'Responder al mensaje para preguntar si es real', resultado: 'Un mensaje puede no ser del banco. Evita responder o abrir sus enlaces; verifica por un canal oficial que ya conozcas.' }
-        ]
-    }
-];
-
-function obtenerFechaRetosHogar() {
-    const ahora = new Date();
-    return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
-}
-
-function formatearTextoRetoHogar(texto) {
-    return texto.replace(/\{([\d.]+)\}/g, (_, monto) => formatD(Number(monto)));
-}
-
-function normalizarProgresoRetosHogar(progreso) {
-    const fechaHoy = obtenerFechaRetosHogar();
-    if (!progreso || progreso.fecha !== fechaHoy || !Array.isArray(progreso.completados)) {
-        return { fecha: fechaHoy, completados: [], respuestas: {} };
-    }
-    const retosPorId = new Map(RETOS_HOGAR.map(reto => [reto.id, reto]));
-    const completados = [...new Set(progreso.completados.filter(id => retosPorId.has(id)))];
-    const respuestas = progreso.respuestas && typeof progreso.respuestas === 'object' ? progreso.respuestas : {};
-    return {
-        fecha: fechaHoy,
-        completados,
-        respuestas: Object.fromEntries(completados
-            .filter(id => Number.isInteger(respuestas[id]) && retosPorId.get(id).opciones[respuestas[id]])
-            .map(id => [id, respuestas[id]]))
-    };
-}
-
-function renderRetosHogar() {
-    const grid = document.getElementById('vidaRetosGrid');
-    if (!grid) return;
-    progresoRetosHogar = normalizarProgresoRetosHogar(progresoRetosHogar);
-    const completados = new Set(progresoRetosHogar.completados);
-    const progresoTexto = document.getElementById('vidaProgresoTexto');
-    const progresoBar = document.getElementById('vidaProgresoBar');
-    const progresoTrack = progresoBar?.parentElement;
-    const filtros = document.getElementById('vidaFiltros');
-    const categoriaActiva = filtros?.querySelector('[aria-pressed="true"]')?.dataset.categoria || 'Todas';
-    const dineroDisponible = RETOS_HOGAR.reduce((total, reto) => total + (completados.has(reto.id) ? 0 : reto.recompensa), 0);
-    const xpDisponible = RETOS_HOGAR.reduce((total, reto) => total + (completados.has(reto.id) ? 0 : reto.xp), 0);
-    const dineroEl = document.getElementById('vidaDineroDisponible');
-    const xpEl = document.getElementById('vidaXpDisponible');
-    if (dineroEl) dineroEl.textContent = formatD(dineroDisponible);
-    if (xpEl) xpEl.textContent = `${xpDisponible} XP`;
-    if (progresoTexto) progresoTexto.textContent = `${completados.size} de ${RETOS_HOGAR.length} retos completados`;
-    if (progresoBar) progresoBar.style.width = `${(completados.size / RETOS_HOGAR.length) * 100}%`;
-    if (progresoTrack) {
-        progresoTrack.setAttribute('aria-valuemax', String(RETOS_HOGAR.length));
-        progresoTrack.setAttribute('aria-valuenow', String(completados.size));
-    }
-
-    if (filtros) {
-        const categorias = ['Todas', ...new Set(RETOS_HOGAR.map(reto => reto.categoria))];
-        filtros.innerHTML = categorias.map(categoria => `
-            <button type="button" class="vida-filter-button${categoria === categoriaActiva ? ' active' : ''}" data-categoria="${categoria}" aria-pressed="${categoria === categoriaActiva}" onclick="filtrarRetosHogar('${categoria}')">${categoria === 'Todas' ? '✨ Todas' : categoria}</button>
-        `).join('');
-    }
-
-    const retosVisibles = categoriaActiva === 'Todas'
-        ? RETOS_HOGAR
-        : RETOS_HOGAR.filter(reto => reto.categoria === categoriaActiva);
-    grid.innerHTML = retosVisibles.map(reto => {
-        const completado = completados.has(reto.id);
-        const respuesta = progresoRetosHogar.respuestas[reto.id];
-        const resultado = Number.isInteger(respuesta)
-            ? formatearTextoRetoHogar(reto.opciones[respuesta].resultado)
-            : 'Reto completado por hoy. ¡Vuelve mañana para otro premio!';
-        return `<article class="vida-reto-card${completado ? ' completado' : ''}">
-            <div class="vida-reto-top"><span class="vida-reto-emoji" aria-hidden="true">${reto.emoji}</span><span class="vida-reto-type">${reto.tipo}</span></div>
-            <h3>${reto.titulo}</h3>
-            <p class="vida-reto-description">${formatearTextoRetoHogar(reto.descripcion)}</p>
-            <div class="vida-reto-options">${reto.opciones.map((opcion, indice) => `
-                <button type="button" class="vida-option-button" ${completado ? 'disabled' : ''} onclick="completarRetoHogar('${reto.id}', ${indice})">${formatearTextoRetoHogar(opcion.texto)}</button>
-            `).join('')}</div>
-            <div class="vida-reto-learning"><strong>💡 Idea clave</strong><p>${formatearTextoRetoHogar(reto.aprendizaje)}</p></div>
-            ${completado
-                ? `<div class="vida-reto-result" role="status">✅ ${resultado} ¡Vuelve mañana para otro premio!</div>`
-                : `<div class="vida-reto-reward">🎁 ${formatD(reto.recompensa)} + ${reto.xp} XP</div>`}
-        </article>`;
-    }).join('');
-}
-
-function filtrarRetosHogar(categoria) {
-    const filtros = document.getElementById('vidaFiltros');
-    const filtro = filtros?.querySelector(`[data-categoria="${categoria}"]`);
-    if (!filtro) return;
-    filtros.querySelectorAll('.vida-filter-button').forEach(boton => {
-        const activo = boton === filtro;
-        boton.classList.toggle('active', activo);
-        boton.setAttribute('aria-pressed', String(activo));
-    });
-    renderRetosHogar();
-}
-
-let vozAppActual = null;
-let articuloWikiHabladoId = '';
-
-function obtenerVozEspanol() {
-    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-        return null;
-    }
-    const vocesEspanol = window.speechSynthesis.getVoices().filter(voz => voz.lang.toLowerCase().startsWith('es'));
-    return vocesEspanol.find(voz => voz.lang.toLowerCase() === 'es-co')
-        || vocesEspanol.find(voz => voz.lang.toLowerCase() === 'es-mx')
-        || vocesEspanol[0]
-        || null;
-}
-
-function actualizarBotonVozWiki(id, texto) {
-    const boton = document.querySelector(`.wiki-speak-button[data-wiki-id="${id}"]`);
-    if (!boton) return;
-    boton.textContent = texto;
-    const reproduciendo = texto.includes('Pausar');
-    boton.setAttribute('aria-pressed', String(reproduciendo));
-    boton.setAttribute('aria-label', `${reproduciendo ? 'Pausar' : texto.includes('Reanudar') ? 'Reanudar' : 'Escuchar'} el artículo`);
-}
-
-function actualizarBotonesGuiaVoz() {
-    const botones = document.querySelectorAll('.setup-voice-button');
-    const pausada = window.speechSynthesis?.paused;
-    const reproduciendo = Boolean(vozAppActual && window.speechSynthesis?.speaking);
-    botones.forEach(boton => {
-        const guia = boton.dataset.guiaPaso === 'suscripcion' ? 'guía de suscripciones' : 'guía de usuario y moneda';
-        boton.textContent = reproduciendo
-            ? pausada ? `▶ Reanudar ${guia}` : `⏸ Pausar ${guia}`
-            : `🔊 Escuchar ${guia}`;
-        boton.setAttribute('aria-pressed', String(reproduciendo && !pausada));
-    });
-}
-
-function detenerVozApp() {
-    const articuloAnterior = articuloWikiHabladoId;
-    vozAppActual = null;
-    articuloWikiHabladoId = '';
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    if (articuloAnterior) actualizarBotonVozWiki(articuloAnterior, '🔊 Escuchar artículo');
-    actualizarBotonesGuiaVoz();
-}
-
-function pausarVozApp() {
-    if (!vozAppActual || !('speechSynthesis' in window) || window.speechSynthesis.paused) return;
-    window.speechSynthesis.pause();
-    if (articuloWikiHabladoId) actualizarBotonVozWiki(articuloWikiHabladoId, '▶ Reanudar lectura');
-    actualizarBotonesGuiaVoz();
-}
-
-function hablarTextoApp(texto, articuloId = '', guiaPaso = '') {
-    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-        toast('Tu navegador no tiene disponible la lectura en voz alta.', 'warning');
-        return false;
-    }
-    detenerVozApp();
-    const lectura = new SpeechSynthesisUtterance(texto);
-    lectura.lang = 'es-CO';
-    lectura.rate = 0.95;
-    lectura.voice = obtenerVozEspanol();
-    articuloWikiHabladoId = articuloId;
-    vozAppActual = lectura;
-    lectura.onend = () => {
-        if (vozAppActual !== lectura) return;
-        vozAppActual = null;
-        articuloWikiHabladoId = '';
-        if (articuloId) actualizarBotonVozWiki(articuloId, '🔊 Escuchar artículo');
-        actualizarBotonesGuiaVoz();
-    };
-    lectura.onerror = error => {
-        if (vozAppActual !== lectura) return;
-        console.warn('No se pudo reproducir la lectura en voz alta:', error.error);
-        vozAppActual = null;
-        articuloWikiHabladoId = '';
-        if (articuloId) actualizarBotonVozWiki(articuloId, '🔊 Escuchar artículo');
-        actualizarBotonesGuiaVoz();
-    };
-    window.speechSynthesis.speak(lectura);
-    actualizarBotonesGuiaVoz();
-    return true;
-}
-
-function leerArticuloWiki(id) {
-    const articulo = WIKI_ARTICULOS.find(item => item.id === id);
-    if (!articulo) return;
-    if (articuloWikiHabladoId === id && window.speechSynthesis.speaking) {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-            actualizarBotonVozWiki(id, '⏸ Pausar lectura');
-        } else {
-            window.speechSynthesis.pause();
-            actualizarBotonVozWiki(id, '▶ Reanudar lectura');
-        }
-        return;
-    }
-    const texto = [
-        articulo.titulo,
-        'Explicación.',
-        articulo.explicacion,
-        'Ejemplo.',
-        articulo.ejemplo,
-        'Cuándo usarlo.',
-        articulo.cuando.join('. '),
-        'Error común.',
-        articulo.error,
-        'Impacto en el juego.',
-        articulo.impacto,
-        'Consejo.',
-        articulo.consejo,
-        'Para recordar.',
-        articulo.frase
-    ].filter(Boolean).join('. ');
-    if (hablarTextoApp(texto, id)) actualizarBotonVozWiki(id, '⏸ Pausar lectura');
-}
-
-function hablarGuiaConfiguracion(paso = 'preferencias') {
-    if (paso === 'usuario') {
-        return hablarTextoApp('Elige un nombre de usuario único de entre 3 y 20 caracteres. Puedes usar letras minúsculas, números y guion bajo. Este nombre aparecerá en tu perfil y en tus interacciones con otros jugadores.', '', paso);
-    }
-    if (paso === 'divisa') {
-        const selector = document.getElementById('currencySelect');
-        const nombreDivisa = selector?.selectedOptions[0]?.textContent?.trim() || 'la moneda seleccionada';
-        return hablarTextoApp(`La moneda elegida es ${nombreDivisa}. Se utilizará para mostrar los valores y precios del juego. Puedes cambiarla antes de continuar.`, '', paso);
-    }
-    if (paso === 'suscripcion') {
-        const planes = Object.values(PLANES).map(plan => {
-            const precio = plan.precioCOP > 0 ? formatD(precioPlanBase(plan)) : 'gratis';
-            return `${plan.nombre}, ${plan.periodoLabel}, ${precio}. ${plan.beneficios.slice(0, 3).join('. ')}.`;
-        }).join(' ');
-        return hablarTextoApp(`Elige la suscripción que prefieras. El plan Básico es gratis y puedes comparar sus beneficios con los otros planes antes de decidir. Los planes disponibles son: ${planes} Revisa el precio y la duración antes de confirmar.`, '', paso);
-    }
-    const guiaUsuario = usernamePendiente
-        ? 'Primero, elige un nombre de usuario de 3 a 20 caracteres usando letras minúsculas, números o guion bajo. '
-        : '';
-    return hablarTextoApp(`${guiaUsuario}Elige la moneda en la que quieres ver los importes del juego. Puedes cambiarla antes de continuar. El botón de escuchar guía repetirá estas instrucciones.`, '', paso);
-}
-
-function alternarVozGuia(paso) {
-    if (vozAppActual && window.speechSynthesis?.speaking) {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-        } else {
-            window.speechSynthesis.pause();
-        }
-        actualizarBotonesGuiaVoz();
-        return;
-    }
-    hablarGuiaConfiguracion(paso);
-}
-
-async function completarRetoHogar(id, opcionIndex) {
-    progresoRetosHogar = normalizarProgresoRetosHogar(progresoRetosHogar);
-    const reto = RETOS_HOGAR.find(item => item.id === id);
-    if (!reto || !Number.isInteger(opcionIndex) || !reto.opciones[opcionIndex]) return;
-    if (!usuarioActual) return toast('Inicia sesión para guardar tu progreso y recibir recompensas.', 'warning');
-    if (progresoRetosHogar.completados.includes(id)) return;
-
-    progresoRetosHogar.completados.push(id);
-    progresoRetosHogar.respuestas[id] = opcionIndex;
-    capital += reto.recompensa;
-    subirXP(reto.xp);
-    actualizarTodo();
-    renderRetosHogar();
-    toast(`🎉 ${formatearTextoRetoHogar(reto.opciones[opcionIndex].resultado)} Ganaste ${formatD(reto.recompensa)} y ${reto.xp} XP.`, 'success');
-    try {
-        await guardar(true);
-    } catch (error) {
-        console.error('No se pudo sincronizar la recompensa del reto cotidiano:', error);
-        toast('Tu recompensa quedó en el respaldo local y se sincronizará al recuperar la conexión.', 'warning');
-    }
-}
 
 function calcularTargetMision(base) {
     if (!base.targetBase) return base.target || 0;
@@ -1392,13 +930,11 @@ function obtenerPromedioGeneralPanel() {
 function obtenerLimitesGraficaPanel(valores) {
     const valoresValidos = valores.filter(Number.isFinite);
     if (!valoresValidos.length) return { min: -1, max: 1 };
-    const minimo = Math.min(0, ...valoresValidos);
-    const maximo = Math.max(0, ...valoresValidos);
-    const margen = Math.max((maximo - minimo) * 0.08, 0.05);
-    return {
-        min: minimo < 0 ? minimo - margen : 0,
-        max: maximo > 0 ? maximo + margen : 0
-    };
+    const minimo = Math.min(...valoresValidos);
+    const maximo = Math.max(...valoresValidos);
+    const centro = (minimo + maximo) / 2;
+    const margen = Math.max((maximo - minimo) * 0.18, Math.abs(centro) * 0.002, 0.05);
+    return { min: minimo - margen, max: maximo + margen };
 }
 
 function guardarHistorialGraficaPanel() {
@@ -1464,12 +1000,9 @@ if (typeof Chart !== 'undefined') Chart.register({
         if (chart.canvas.id !== 'graficaPanel') return;
         const points = chart.getDatasetMeta(0)?.data;
         const values = chart.data.datasets[0].data;
-        if (!points || points.length < 2 || !chart.chartArea) return;
+        if (!points || points.length < 2) return;
         const ctx = chart.ctx;
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(chart.chartArea.left, chart.chartArea.top, chart.chartArea.width, chart.chartArea.height);
-        ctx.clip();
         ctx.shadowBlur = 13;
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
@@ -1765,7 +1298,6 @@ async function registrar() {
         puntosHabilidadTotal: 0,
         desafios: [],
         desafiosCompletados: 0,
-        hogarRetos: { fecha: obtenerFechaRetosHogar(), completados: [] },
         ultimaActDesafios: null,
         fotoPerfil: FOTOS_PERFIL_PREDETERMINADAS[avatarInicial],
         avatarSeleccionado: avatarInicial,
@@ -1916,7 +1448,6 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
     prestamosActivos = u.prestamosActivos || 0;
     puntosHabilidadTotal = u.puntosHabilidadTotal || 0;
     desafiosDiarios = u.desafios || [];
-    progresoRetosHogar = normalizarProgresoRetosHogar(u.hogarRetos);
     usuarioFotoPerfil = u.fotoPerfil || FOTOS_PERFIL_PREDETERMINADAS[Math.floor(Math.random() * FOTOS_PERFIL_PREDETERMINADAS.length)];
     const avatarGuardado = Number.isInteger(u.avatarSeleccionado) ? u.avatarSeleccionado : FOTOS_PERFIL_PREDETERMINADAS.indexOf(u.fotoPerfil);
     avatarSeleccionado = obtenerIndiceAvatarPerfil(u.fotoPerfil, u.avatarSeleccionado);
@@ -1981,10 +1512,6 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
 
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("preferencesScreen").style.display = usernamePendiente || !monedaGuardada ? "flex" : "none";
-    document.getElementById("currencySelect").value = monedaActual;
-    if (usernamePendiente || !monedaGuardada) {
-        window.setTimeout(() => hablarGuiaConfiguracion('preferencias'), 500);
-    }
     const usernameField = document.getElementById('usernameField');
     const usernameInput = document.getElementById('usernameInput');
     if (usernameField) usernameField.style.display = usernamePendiente ? 'block' : 'none';
@@ -1994,14 +1521,19 @@ async function login(authUser = '', authData = null, isGoogle = false, isNewGoog
         if (errorLabel) errorLabel.textContent = '';
         return;
     }
-    if (!monedaGuardada) return;
-    if (!planActual) {
-        document.getElementById('plansScreen').style.display = 'flex';
-        renderPlanes();
-        window.setTimeout(() => hablarGuiaConfiguracion('suscripcion'), 500);
+    if (isGoogle) {
+        iniciarJuego();
         return;
     }
-    iniciarJuego();
+    document.getElementById("currencySelect").value = monedaActual;
+    if (monedaGuardada && !planActual) {
+        await iniciarJuego();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        document.getElementById('plansScreen').style.display = 'flex';
+        renderPlanes();
+    } else if (monedaGuardada && planActual) {
+        iniciarJuego();
+    }
 }
 
 async function loginConGoogle() {
@@ -2071,9 +1603,10 @@ async function confirmarPreferencias() {
         return;
     }
     document.getElementById('preferencesScreen').style.display = 'none';
+    await iniciarJuego();
+    await new Promise(resolve => setTimeout(resolve, 1000));
     document.getElementById('plansScreen').style.display = 'flex';
     renderPlanes();
-    window.setTimeout(() => hablarGuiaConfiguracion('suscripcion'), 500);
 }
 
 function renderPlanes() {
@@ -2110,9 +1643,6 @@ function seleccionarPlan(id) {
     if (!PLANES[id]) return;
     planSeleccionado = id;
     renderPlanes();
-    const plan = PLANES[id];
-    const precio = plan.precioCOP > 0 ? formatD(precioPlanBase(plan)) : 'gratis';
-    hablarTextoApp(`${plan.nombre}. ${plan.periodoLabel}. Precio: ${precio}. ${plan.beneficios.join('. ')}.`);
 }
 
 function abrirSelectorPlan() {
@@ -2139,7 +1669,6 @@ function volverAjustesDesdePlanes() {
 
 function confirmarPlan() {
     if (!planSeleccionado || !PLANES[planSeleccionado]) return;
-    pausarVozApp();
     const plan = PLANES[planSeleccionado];
     if (plan.precioCOP > 0) {
         solicitarPagoPlan(planSeleccionado);
@@ -2368,6 +1897,7 @@ async function iniciarJuego() {
     mostrar('panel');
     deferHeavyUiWork(() => {
         initChart();
+        dibujarTienda();
         actualizarTodo();
         renderLogros();
         initAsesores();
@@ -2380,75 +1910,11 @@ async function iniciarJuego() {
         aplicarIdioma();
         restaurarHistorialNoticiasUI();
     });
-    mostrarBienvenidaImperio();
+    toast("Bienvenido de vuelta, " + usuarioActual, "info");
 
     guardar().catch(e => {
         console.warn("Error guardando progreso en segundo plano:", e);
     });
-}
-
-function mostrarBienvenidaImperio() {
-    document.getElementById('welcomeModal')?.classList.add('active');
-    document.getElementById('welcomeModal')?.querySelector('.btn-confirm')?.focus();
-    iniciarAudioBienvenida();
-}
-
-function cerrarBienvenidaImperio() {
-    document.getElementById('welcomeModal')?.classList.remove('active');
-    const audio = document.getElementById('welcomeAudio');
-    audio?.pause();
-    if (audio) audio.currentTime = 0;
-    const audioButton = document.getElementById('welcomeAudioButton');
-    if (audioButton) {
-        audioButton.textContent = '▶ Escuchar bienvenida';
-        audioButton.setAttribute('aria-pressed', 'false');
-    }
-}
-
-async function iniciarAudioBienvenida() {
-    const audio = document.getElementById('welcomeAudio');
-    const button = document.getElementById('welcomeAudioButton');
-    if (!audio || !button) return;
-
-    audio.onended = () => {
-        button.textContent = '▶ Escuchar bienvenida';
-        button.setAttribute('aria-pressed', 'false');
-    };
-    try {
-        await audio.play();
-        button.textContent = '⏸ Pausar bienvenida';
-        button.setAttribute('aria-pressed', 'true');
-    } catch (error) {
-        button.textContent = '▶ Pulsa para escuchar bienvenida';
-        button.setAttribute('aria-pressed', 'false');
-        console.warn('El navegador bloqueó la reproducción automática de la bienvenida:', error);
-    }
-}
-
-async function toggleBienvenidaAudio() {
-    const audio = document.getElementById('welcomeAudio');
-    const button = document.getElementById('welcomeAudioButton');
-    if (!audio || !button) return;
-
-    if (!audio.paused) {
-        audio.pause();
-        button.textContent = '▶ Escuchar bienvenida';
-        button.setAttribute('aria-pressed', 'false');
-        return;
-    }
-
-    audio.onended = () => {
-        button.textContent = '▶ Escuchar bienvenida';
-        button.setAttribute('aria-pressed', 'false');
-    };
-    try {
-        await audio.play();
-        button.textContent = '⏸ Pausar bienvenida';
-        button.setAttribute('aria-pressed', 'true');
-    } catch (error) {
-        console.error('No se pudo reproducir el audio de bienvenida:', error);
-        toast('No se pudo reproducir el audio de bienvenida.', 'error');
-    }
 }
 
 async function guardar(propagateError = false) {
@@ -2482,7 +1948,6 @@ async function guardar(propagateError = false) {
         puntosHabilidadTotal: puntosHabilidadTotal,
         desafios: desafiosDiarios,
         desafiosCompletados: desafiosCompletadosHoy,
-        hogarRetos: progresoRetosHogar,
         ultimaActDesafios: ultimaActualizacionDesafios,
         fotoPerfil: usuarioFotoPerfil,
         avatarSeleccionado: avatarSeleccionado,
@@ -4791,7 +4256,7 @@ function mostrarNoticiaMercado(noticia, impactoVisible) {
     div.style.animation = 'fadeIn 0.5s';
     const restante = noticia.terminaEn ? Math.max(0, Math.ceil((noticia.terminaEn - Date.now()) / 1000)) : null;
     div.innerHTML = `
-        <img class="noticia-logo" src="${getImagenNoticia(noticia.empresa)}" data-empresa="${escaparHtmlSocial(noticia.empresa || '')}" data-logo-fallback="${getEmpresaLogoFallback(noticia.empresa)}" data-logo-favicon="${getEmpresaLogoFavicon(noticia.empresa)}" alt="Logo de ${noticia.empresa}" loading="lazy" onerror="manejarErrorLogoEmpresa(this)">
+        <img class="noticia-logo" src="${getImagenNoticia(noticia.empresa)}" alt="Logo de ${noticia.empresa}" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
         <div class="noticia-contenido">
             <div class="noticia-encabezado"><b style="color:${colorCat}">${noticia.empresa}</b><span class="noticia-sector">${noticia.sector}</span></div>
             <div class="noticia-titulo">${noticia.titulo}</div>
@@ -5830,10 +5295,17 @@ Object.entries(NOTICIAS_EMPRESA_FINANZAS).forEach(([empresa, datos]) => {
     registrarNoticiasEmpresa(empresa, datos.positivo, datos.negativo);
 });
 
+function slugEmpresa(nombre) {
+    return String(nombre || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'default';
+}
+
 const dominiosEmpresas = {
     "Visa": "visa.com", "Mastercard": "mastercard.com", "PayPal": "paypal.com", "Goldman Sachs": "goldmansachs.com",
-    "Davivienda": "davivienda.com", "NuBank": "nubank.com.br", "Revolut": "revolut.com", "Stripe": "stripe.com",
-    "Square": "squareup.com", "Robinhood": "robinhood.com", "eToro": "etoro.com",
     "Morgan Stanley": "morganstanley.com", "JPMorgan": "jpmorganchase.com", "Citi": "citi.com", "Bank of America": "bankofamerica.com",
     "Wells Fargo": "wellsfargo.com", "HSBC": "hsbc.com", "Santander": "santander.com", "BBVA": "bbva.com",
     "Apple": "apple.com", "Google": "google.com", "Microsoft": "microsoft.com", "Amazon": "amazon.com", "Meta": "meta.com",
@@ -5846,8 +5318,7 @@ const dominiosEmpresas = {
     "Synthesia": "synthesia.io", "Graphcore": "graphcore.ai", "Hugging Face": "huggingface.co", "Jasper AI": "jasper.ai",
     "DataRobot": "datarobot.com", "Shield AI": "shield.ai", "Cohere": "cohere.com", "Stability AI": "stability.ai",
     "Runway ML": "runwayml.com", "Midjourney": "midjourney.com", "Perplexity": "perplexity.ai", "Character.AI": "character.ai",
-    "Mistral AI": "mistral.ai", "xAI": "x.ai", "Aleph Alpha": "aleph-alpha.de", "H2O.ai": "h2o.ai", "Vicarious": "vicarious.com",
-    "SambaNova": "sambanova.ai", "ExxonMobil": "corporate.exxonmobil.com", "Shell": "shell.com", "Chevron": "chevron.com", "BP": "bp.com",
+    "ExxonMobil": "corporate.exxonmobil.com", "Shell": "shell.com", "Chevron": "chevron.com", "BP": "bp.com",
     "TotalEnergies": "totalenergies.com", "Petrobras": "petrobras.com.br", "Ecopetrol": "ecopetrol.com.co", "Enel": "enel.com",
     "Iberdrola": "iberdrola.com", "Repsol": "repsol.com", "Pfizer": "pfizer.com", "Moderna": "modernatx.com", "AstraZeneca": "astrazeneca.com",
     "J&J": "jnj.com", "Novartis": "novartis.com", "Roche": "roche.com", "Sanofi": "sanofi.com", "GSK": "gsk.com",
@@ -5859,113 +5330,26 @@ const dominiosEmpresas = {
     "Brown-Forman": "brown-forman.com", "Ambev": "ambev.com.br", "Carlsberg": "carlsberggroup.com", "Boston Beer": "bostonbeer.com",
     "Monster Beverage": "monsterbevcorp.com", "Celsius": "celsius.com", "Pepsi": "pepsi.com", "P&G": "pg.com", "Colgate": "colgatepalmolive.com",
     "Adidas": "adidas.com", "Starbucks": "starbucks.com", "McDonald's": "mcdonalds.com", "Walmart": "walmart.com", "Costco": "costco.com",
-    "Zara": "zara.com", "Burger King": "bk.com", "KFC": "kfc.com", "Domino's": "dominos.com", "Yum Brands": "yum.com",
-    "Best Buy": "bestbuy.com", "Macy's": "macys.com", "Nordstrom": "nordstrom.com", "Kohl's": "kohls.com", "Uniqlo": "uniqlo.com",
-    "Sephora": "sephora.com", "IKEA": "ikea.com", "Decathlon": "decathlon.com", "Home Depot": "homedepot.com", "Lowe's": "lowes.com",
-    "Dollar General": "dollargeneral.com", "Ahold Delhaize": "aholddelhaize.com", "Tesco": "tesco.com", "Sainsbury's": "sainsburys.co.uk",
-    "Kroger": "kroger.com", "Lidl": "lidl.com", "LVMH": "lvmh.com", "Hermes": "hermes.com", "Kering": "kering.com", "Richemont": "richemont.com", "Dior": "dior.com",
-    "Chanel": "chanel.com", "Prada": "prada.com", "Ralph Lauren": "ralphlauren.com", "Coach": "coach.com", "Michael Kors": "michaelkors.com",
-    "Tapestry": "tapestry.com", "Capri Holdings": "capriholdings.com", "Under Armour": "underarmour.com", "Lululemon": "lululemon.com",
-    "Gap": "gap.com", "Levi Strauss": "levistrauss.com", "VF Corp": "vf.com", "Hanesbrands": "hanesbrands.com", "Guess": "guess.com",
-    "TJX Companies": "tjx.com", "Ross Stores": "rossstores.com", "Burlington": "burlington.com", "Burberry": "burberry.com",
-    "Gucci": "gucci.com", "Armani": "armani.com", "Moncler": "moncler.com", "On Running": "on-running.com", "Skechers": "skechers.com",
-    "Inditex": "inditex.com", "H&M": "hm.com", "Fast Retailing": "fastretailing.com", "Macy's": "macys.com", "Kohl's": "kohls.com",
-    "Nordstrom": "nordstrom.com", "L Brands": "lbrands.com", "American Eagle": "ae.com", "Abercrombie": "abercrombie.com",
-    "Urban Outfitters": "urbanoutfitters.com", "Foot Locker": "footlocker.com", "Dick's Sporting": "dickssportinggoods.com",
-    "Academy Sports": "academy.com", "Big 5": "big5sportinggoods.com", "Shoe Carnival": "shoecarnival.com", "Genesco": "genesco.com",
-    "Weyco": "weyco.com", "Caleres": "caleres.com", "Designer Brands": "designerbrands.com", "Boot Barn": "bootbarn.com",
-    "Puma": "puma.com", "New Balance": "newbalance.com", "Asics": "asics.com", "On Holding": "on.com", "Li Ning": "lining.com",
-    "BHP": "bhp.com", "Rio Tinto": "riotinto.com", "Vale": "vale.com", "Glencore": "glencore.com", "Anglo American": "angloamerican.com",
-    "Freeport": "freeportmcmoran.com", "Newmont": "newmont.com", "Barrick": "barrick.com", "Teck": "teck.com", "Gold Fields": "goldfields.com",
-    "Sibanye": "sibanyestillwater.com", "Harmony Gold": "harmony.co.za", "Kinross": "kinross.com", "Polyus": "polyus.com", "Alcoa": "alcoa.com",
-    "Vedanta": "vedantaresources.com", "MMG": "mmg.com", "First Quantum": "first-quantum.com", "Zijin": "zijinmining.com", "Antofagasta": "antofagasta.co",
-    "Southern Copper": "southerncopper.com", "Lundin Mining": "lundinmining.com", "Yamana Gold": "yamana.com", "Pan American Silver": "panamericangold.com",
-    "Lithium Americas": "lithiumamericas.com", "Agnico Eagle": "agnicoeagle.com", "Cameco": "cameco.com", "Livent": "livent.com", "MP Materials": "mpmaterials.com",
-    "Wheaton Precious Metals": "wheatonpm.com", "Lockheed Martin": "lockheedmartin.com", "Raytheon": "raytheon.com", "Northrop Grumman": "northropgrumman.com",
-    "General Dynamics": "gd.com", "L3Harris": "l3harris.com", "BAE Systems": "baesystems.com", "Thales": "thalesgroup.com", "Leonardo": "leonardocompany.com",
-    "Saab": "saab.com", "Rheinmetall": "rheinmetall.com", "Hensoldt": "hensoldt.net", "Elbit Systems": "elbitsystems.com", "Israel Aerospace": "iai.co.il",
-    "Rafael": "rafael.co.il", "Naval Group": "naval-group.com", "Fincantieri": "fincantieri.com", "DSME": "dsme.co.kr", "Hyundai Heavy": "hhi.co.kr",
-    "Mitsubishi Heavy": "mhi.com", "Kawasaki Heavy": "khi.co.jp", "IHI Corp": "ihi.co.jp", "Textron": "textrongroup.com", "BWX Technologies": "bwx.com",
-    "General Atomics": "ga.com", "Krauss-Maffei": "kraussmaffei.com", "Boeing Defense": "boeing.com", "Dassault Aviation": "dassault-aviation.com", "Rostec": "rostec.ru", "Hanwha Aerospace": "hanwha.com", "Navantia": "navantia.es",
-    "Fincantieri": "fincantieri.com", "DSME": "dsme.co.kr", "Hyundai Heavy": "hhi.co.kr", "Mitsubishi Heavy": "mhi.com", "Kawasaki Heavy": "khi.co.jp", "IHI Corp": "ihi.co.jp", "Textron": "textrongroup.com", "BWX Technologies": "bwx.com",
-    "Zillow": "zillow.com", "Redfin": "redfin.com", "CoStar": "costar.com", "Realty Income": "realtyincome.com", "Simon Property": "simon.com",
-    "Prologis": "prologis.com", "Equinix": "equinix.com", "Digital Realty": "digitalrealty.com", "AvalonBay": "avalonbay.com", "Essex Property": "essexproperty.com",
-    "Welltower": "welltower.com", "Ventas": "ventasreit.com", "Boston Properties": "bostonproperties.com", "Vornado": "vornado.com", "SL Green": "slgreen.com",
-    "Equity Residential": "equityapartments.com", "Invitation Homes": "invitationhomes.com", "Sun Communities": "suncommunities.com", "Mid-America": "midamericapartments.com",
-    "Camden Property": "camdenliving.com", "UDR Inc": "udr.com", "Equity Lifestyle": "equitylifestyle.com", "Newmark": "newmark.com", "CBRE Group": "cbre.com",
-    "JLL": "jll.com", "Procore": "procore.com", "Land Securities": "landsecurities.com", "British Land": "britishland.com", "Hines": "hines.com",
-    "Brookfield Properties": "brookfieldproperties.com", "Toyota": "toyota.com", "Ford": "ford.com", "BMW": "bmw.com", "Audi": "audi.com", "Mercedes": "mercedes-benz.com",
+    "Toyota": "toyota.com", "Ford": "ford.com", "BMW": "bmw.com", "Audi": "audi.com", "Mercedes": "mercedes-benz.com",
     "Nissan": "nissan-global.com", "Hyundai": "hyundai.com", "Kia": "kia.com", "Volkswagen": "volkswagen.com", "Ferrari": "ferrari.com",
-    "Volvo": "volvocars.com", "Chevrolet": "chevrolet.com", "Lamborghini": "lamborghini.com", "Mazda": "mazda.com",
-    "Subaru": "subaru.com", "Peugeot": "peugeot.com", "Renault": "renaultgroup.com", "Jeep": "jeep.com", "Dodge": "dodge.com",
-    "Stellantis": "stellantis.com", "BYD": "byd.com", "Rivian": "rivian.com", "Lucid Motors": "lucidmotors.com", "Honda": "honda.com",
-    "Mitsubishi Motors": "mitsubishi-motors.com", "Suzuki": "globalsuzuki.com", "Isuzu": "isuzu.com", "Polestar": "polestar.com",
-    "Alfa Romeo": "alfaromeo.com", "Disney": "disney.com",
+    "Volvo": "volvocars.com", "Chevrolet": "chevrolet.com", "BYD": "byd.com", "Rivian": "rivian.com", "Disney": "disney.com",
     "Nintendo": "nintendo.com", "Sony": "sony.com", "YouTube": "youtube.com", "TikTok": "tiktok.com", "eBay": "ebay.com",
-    "Shopify": "shopify.com", "Mercado Libre": "mercadolibre.com", "FedEx": "fedex.com", "Boeing": "boeing.com",
+    "Shopify": "shopify.com", "Mercado Libre": "mercadolibre.com", "FedEx": "fedex.com", "Boeing": "boeing.com", "AT&T": "att.com",
     "Square Enix": "square-enix-games.com", "Sega": "sega.com", "Bandai Namco": "bandainamcoent.com", "Konami": "konami.com",
     "Nexon": "nexon.com", "NetEase": "neteasegames.com", "Sea Limited": "sea.com", "Roblox": "roblox.com",
-    "AT&T": "att.com", "Verizon": "verizon.com", "T-Mobile": "t-mobile.com", "Telefonica": "telefonica.com", "America Movil": "americamovil.com",
-    "Vodafone": "vodafone.com", "Orange": "orange.com", "BT": "bt.com", "Telstra": "telstra.com", "SK Telecom": "sktelecom.com",
-    "NTT": "ntt.com", "China Mobile": "chinamobile.com", "Sprint": "sprint.com", "Claro": "claro.com.br", "Movistar": "movistar.com",
-    "Entel": "entel.cl", "Tigo": "tigo.com", "Digicel": "digicelgroup.com", "MTN": "mtn.com", "Zain": "zain.com",
-    "Comcast": "comcast.com", "Charter Communications": "charter.com", "Cisco": "cisco.com", "Qualcomm": "qualcomm.com", "Nokia": "nokia.com",
-    "Ericsson": "ericsson.com", "Huawei": "huawei.com", "Rogers": "rogers.com", "Bell Canada": "bell.ca", "Telus": "telus.com",
-    "Deutsche Bank": "db.com", "BlackRock": "blackrock.com", "Capital One": "capitalone.com"
+    "Verizon": "verizon.com", "T-Mobile": "t-mobile.com", "Deutsche Bank": "db.com", "BlackRock": "blackrock.com", "Capital One": "capitalone.com"
 };
 
 const LOGO_DEV_TOKEN = 'pk_VKLWjmOBT_qzjtp___qpiQ';
 
-function getEmpresaLogoFallback(emp) {
-    const nombre = String(emp || 'Empresa').trim() || 'Empresa';
-    const iniciales = nombre.split(/\s+/).slice(0, 2).map(parte => parte[0]).join('').toUpperCase();
-    const colores = ['#176B87', '#B54735', '#39734A', '#8A5A18', '#5A4A8A', '#24766F'];
-    const hash = [...nombre].reduce((total, caracter) => (total * 31 + caracter.charCodeAt(0)) >>> 0, 0);
-    const color = colores[hash % colores.length];
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="24" fill="${color}"/><text x="64" y="68" fill="#fff" font-family="Arial,sans-serif" font-size="48" font-weight="700" text-anchor="middle" dominant-baseline="central">${iniciales}</text></svg>`;
-    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-function inferirDominioEmpresa(emp) {
-    const valor = String(emp || '').trim();
-    if (!valor) return '';
-    const limpio = valor
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/&/g, 'and')
-        .replace(/\+/g, 'plus')
-        .replace(/[^a-zA-Z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .toLowerCase();
-    return limpio ? `${limpio}.com` : '';
-}
-
-function getEmpresaLogoFavicon(emp) {
-    if (!emp) return '';
-    const dominio = dominiosEmpresas[emp] || inferirDominioEmpresa(emp);
-    if (!dominio) return getEmpresaLogoFallback(emp);
-    const cleanDomain = String(dominio).replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
-    return `https://www.google.com/s2/favicons?sz=128&domain_url=${encodeURIComponent(`https://${cleanDomain}`)}`;
-}
-
-function manejarErrorLogoEmpresa(imagen) {
-    if (imagen && !imagen.dataset.logoFaviconTried && imagen.dataset.logoFavicon) {
-        imagen.dataset.logoFaviconTried = 'true';
-        imagen.src = imagen.dataset.logoFavicon;
-        return;
-    }
-    imagen.onerror = null;
-    imagen.src = imagen.dataset.logoFallback || getEmpresaLogoFallback(imagen.dataset.empresa || 'Empresa');
-}
-
 function getEmpresaLogo(emp, tipo = 'empresa') {
     if (!emp) return tipo === 'noticia' ? 'assets/news/default.svg' : 'assets/logos/logo-mark.png';
     if (tipo === 'empresa') {
-        const dominio = dominiosEmpresas[emp];
-        if (LOGO_DEV_TOKEN && dominio) {
+        if (LOGO_DEV_TOKEN) {
+            const dominio = dominiosEmpresas[emp] || `${slugEmpresa(emp)}.com`;
             return `https://img.logo.dev/${dominio}?token=${encodeURIComponent(LOGO_DEV_TOKEN)}&size=128`;
         }
-        return getEmpresaLogoFavicon(emp);
+        return 'assets/logos/logo-mark.png';
     }
     return tipo === 'noticia' ? 'assets/news/default.svg' : 'assets/logos/logo-mark.png';
 }
@@ -6003,16 +5387,19 @@ setInterval(() => {
 // ==========================================
 // MOTOR DE MERCADO EN TIEMPO REAL
 // ==========================================
-const EMPRESAS_POR_TICK_MERCADO = 10;
-const INTERVALO_TICK_MERCADO = 100;
-let empresasMercadoOrden = Object.keys(preciosMercado);
-let cursorActualizacionMercado = 0;
-let ultimaActualizacionGraficasMercado = 0;
-let ultimaActualizacionPanelEmpresasMercado = 0;
+let precioUpdateTimers = {};
+
+function getRandomPrecioDelayMs() {
+    return 1000 + Math.random() * 4000;
+}
 
 function updatePrecioEmpresa(emp) {
     let meta = empresaMeta[emp];
-    if (!meta) return;
+    if (!meta) {
+        let delay = getRandomPrecioDelayMs();
+        precioUpdateTimers[emp] = setTimeout(() => updatePrecioEmpresa(emp), delay);
+        return;
+    }
     try {
     if (usuarioActual) {
         let cat = meta.sector;
@@ -6068,16 +5455,9 @@ function updatePrecioEmpresa(emp) {
 
         meta.recuperacion = Math.abs(recovery) > 0.00001 ? recovery * 0.9 : 0;
         if (portafolio[emp]) {
-            const ahora = Date.now();
-            if (ahora - ultimaActualizacionGraficasMercado >= 1000) {
-                ultimaActualizacionGraficasMercado = ahora;
-                actualizarGraficaPanel(obtenerPromedioGeneralPanel());
-                actualizarChartPortafolio();
-            }
-            if (ahora - ultimaActualizacionPanelEmpresasMercado >= 500) {
-                ultimaActualizacionPanelEmpresasMercado = ahora;
-                actualizarEmpresasPanel();
-            }
+            actualizarGraficaPanel(obtenerPromedioGeneralPanel());
+            actualizarChartPortafolio();
+            actualizarEmpresasPanel();
             const portfolioSafeId = obtenerIdSeguro(emp);
             const posicion = portafolio[emp];
             const rendimiento = calcularRendimientoPct(newPrice, posicion.precioCompra);
@@ -6103,36 +5483,33 @@ function updatePrecioEmpresa(emp) {
             if (balancePanel) balancePanel.innerText = formatD(calcNeto());
         }
 
-        const safeId = obtenerIdSeguro(emp);
-        const priceElement = document.getElementById(`price-${safeId}`);
-        if (priceElement && document.getElementById('invertir')?.contains(priceElement)) {
-            priceElement.textContent = formatPrecioMercado(newPrice);
-        }
-        const arrowElement = document.getElementById(`arrow-${safeId}`);
-        if (arrowElement && document.getElementById('invertir')?.contains(arrowElement)) {
-            arrowElement.textContent = pctChange >= 0 ? '▲' : '▼';
-        }
+        let safeId = obtenerIdSeguro(emp);
+        document.querySelectorAll(`[id="price-${safeId}"]`).forEach(priceEl => {
+            priceEl.innerText = formatPrecioMercado(newPrice);
+        });
+        let arrow = pctChange >= 0 ? "▲" : "▼";
+        document.querySelectorAll(`[id="arrow-${safeId}"]`).forEach(arrowEl => {
+            arrowEl.innerText = arrow;
+        });
         actualizarPreciosCooperativos(emp);
     }
     } catch (error) {
         console.error(`[Mercado] No se pudo actualizar ${emp}; se reintentará:`, error);
     }
+    let delay = getRandomPrecioDelayMs();
+    precioUpdateTimers[emp] = setTimeout(() => updatePrecioEmpresa(emp), delay);
 }
 
 function iniciarActualizacionPreciosAleatoria() {
-    empresasMercadoOrden = Object.keys(preciosMercado);
-    cursorActualizacionMercado = 0;
+    Object.keys(preciosMercado).forEach(emp => {
+        if (precioUpdateTimers[emp]) clearTimeout(precioUpdateTimers[emp]);
+        let delay = getRandomPrecioDelayMs();
+        precioUpdateTimers[emp] = setTimeout(() => updatePrecioEmpresa(emp), delay);
+    });
 }
 
+// Iniciar la actualizacion de precios despues de inicializar el mercado
 iniciarActualizacionPreciosAleatoria();
-setInterval(() => {
-    if (!usuarioActual || document.hidden || estaEnPreferencias()) return;
-    for (let index = 0; index < EMPRESAS_POR_TICK_MERCADO; index++) {
-        if (!empresasMercadoOrden.length) return;
-        if (cursorActualizacionMercado >= empresasMercadoOrden.length) cursorActualizacionMercado = 0;
-        updatePrecioEmpresa(empresasMercadoOrden[cursorActualizacionMercado++]);
-    }
-}, INTERVALO_TICK_MERCADO);
 
 // ==========================================
 // TIENDA / INVERSIONES
@@ -6142,32 +5519,9 @@ function obtenerIdSeguro(text) {
 }
 
 function dibujarTienda() {
-    const section = document.getElementById('invertir');
-    if (!section || section.classList.contains('hidden')) {
-        tiendaRenderPendiente = true;
-        return;
-    }
-    if (!tiendaRenderPendiente) return;
     const cont = document.getElementById("inversionesContenedor");
-    if (!cont) return;
-    tiendaRenderPendiente = false;
-    const renderToken = ++tiendaRenderToken;
     cont.innerHTML = "";
-    const categorias = Object.entries(CATEGORIAS);
-    let categoriaIndex = 0;
-    const renderizarSiguienteCategoria = () => {
-        if (renderToken !== tiendaRenderToken) return;
-        if (section.classList.contains('hidden')) {
-            tiendaRenderPendiente = true;
-            return;
-        }
-        const siguiente = categorias[categoriaIndex++];
-        if (!siguiente) {
-            const buscador = document.getElementById('buscadorEmpresas');
-            if (buscador?.value.trim()) filtrarEmpresas();
-            return;
-        }
-        const [cat, data] = siguiente;
+    Object.entries(CATEGORIAS).forEach(([cat, data]) => {
         let div = document.createElement("div");
         div.className = "card categoria-card";
         div.dataset.categoria = cat;
@@ -6191,7 +5545,7 @@ function dibujarTienda() {
             row.innerHTML = `
                 <button class="btn-comprar-accion" id="btn-${safeId}" ${locked ? 'disabled' : ''}>Comprar</button>
                 <div class="empresa-logo">
-                    <img src="${getEmpresaLogo(emp)}" data-empresa="${escaparHtmlSocial(emp || '')}" data-logo-fallback="${getEmpresaLogoFallback(emp)}" data-logo-favicon="${getEmpresaLogoFavicon(emp)}" data-empresa-logo="${emp}" alt="${emp}" loading="lazy" decoding="async" onerror="manejarErrorLogoEmpresa(this)">
+                    <img src="${getEmpresaLogo(emp)}" data-empresa-logo="${emp}" alt="${emp}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
                 </div>
                 <div class="empresa-meta">
                     <div class="emp-name">${emp}</div>
@@ -6213,15 +5567,11 @@ function dibujarTienda() {
         });
         div.appendChild(list);
         cont.appendChild(div);
-        requestAnimationFrame(renderizarSiguienteCategoria);
-    };
-    requestAnimationFrame(renderizarSiguienteCategoria);
+    });
 }
 
 let compraPendiente = null;
 let modalActionType = null;
-let tiendaRenderPendiente = true;
-let tiendaRenderToken = 0;
 
 function resetModalConfirmState() {
     compraPendiente = null;
@@ -6520,7 +5870,7 @@ function actualizarEmpresasPanel() {
         const indicador = rendimiento >= 0 ? '▲' : '▼';
 
         return `<article class="dashboard-company-row">
-            <span class="dashboard-company-logo"><img src="${getEmpresaLogo(empresa)}" data-empresa="${escaparHtmlSocial(empresa || '')}" data-logo-fallback="${getEmpresaLogoFallback(empresa)}" data-logo-favicon="${getEmpresaLogoFavicon(empresa)}" alt="${empresa}" loading="lazy" onerror="manejarErrorLogoEmpresa(this)"></span>
+            <span class="dashboard-company-logo"><img src="${getEmpresaLogo(empresa)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';"></span>
             <span class="dashboard-company-name"><strong>${empresa}</strong><span class="dashboard-company-ownership"><small>Tenencia</small><b>${tenencia}</b></span></span>
             <span class="dashboard-company-value"><strong>${formatD(valorInversion)}</strong><small>Total invertido</small><strong>${formatD(valorActual)}</strong><small>Valor actual</small><span class="dashboard-company-yield ${tendencia}">${indicador} ${Math.abs(rendimiento).toFixed(2)}%</span></span>
         </article>`;
@@ -6587,7 +5937,7 @@ function actualizarTodo() {
                     <td>
                         <div style="display:flex;align-items:center;gap:10px;">
                             <div class="empresa-logo empresa-logo-sm">
-                                <img src="${getEmpresaLogo(emp)}" data-empresa="${escaparHtmlSocial(emp || '')}" data-logo-fallback="${getEmpresaLogoFallback(emp)}" data-logo-favicon="${getEmpresaLogoFavicon(emp)}" data-empresa-logo="${emp}" alt="${emp}" loading="lazy" decoding="async" onerror="manejarErrorLogoEmpresa(this)">
+                                <img src="${getEmpresaLogo(emp)}" data-empresa-logo="${emp}" alt="${emp}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
                             </div>
                             <div>
                                 <b>${emp}</b><br><small style="color:#666">${meta.sector}</small>
@@ -6651,10 +6001,6 @@ let asesoresRenderPending = false;
 let habilidadesRenderPending = false;
 let reputacionRenderPending = false;
 let desafiosRenderPending = false;
-let mercadoCardsVisibles = new Set();
-let mercadoCardsObserver = null;
-let mercadoRenderizado = false;
-let mercadoRenderToken = 0;
 
 // ==========================================
 // MERCADO LISTA COMPLETO — TODAS LAS CATEGORIAS
@@ -6663,36 +6009,8 @@ function renderMercadoCompleto() {
     if (!usuarioActual) return;
     let cont = document.getElementById("mercadoCategorias");
     if (!cont) return;
-    const section = document.getElementById('mercado');
-    if (!section || section.classList.contains('hidden') || mercadoRenderizado) return;
-    const renderToken = ++mercadoRenderToken;
-    if (mercadoCardsObserver) mercadoCardsObserver.disconnect();
-    mercadoCardsObserver = typeof IntersectionObserver === 'function'
-        ? new IntersectionObserver(entries => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) mercadoCardsVisibles.add(entry.target);
-                else mercadoCardsVisibles.delete(entry.target);
-            });
-        }, { rootMargin: '160px' })
-        : null;
-    mercadoCardsVisibles.clear();
     cont.innerHTML = "";
-    const categorias = Object.entries(CATEGORIAS);
-    let categoriaIndex = 0;
-    const renderizarSiguienteCategoria = () => {
-        if (renderToken !== mercadoRenderToken) return;
-        if (section.classList.contains('hidden')) {
-            mercadoRenderToken++;
-            return;
-        }
-        const siguiente = categorias[categoriaIndex++];
-        if (!siguiente) {
-            mercadoRenderizado = true;
-            const buscador = document.getElementById('buscadorMercado');
-            if (buscador?.value.trim()) filtrarMercado();
-            return;
-        }
-        const [cat, data] = siguiente;
+    Object.entries(CATEGORIAS).forEach(([cat, data]) => {
         let catDiv = document.createElement("div");
         catDiv.style.cssText = "margin-bottom: 20px;";
         let locked = nivel < data.lvl;
@@ -6719,7 +6037,7 @@ function renderMercadoCompleto() {
             card.style.cssText = `background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; border:1px solid ${data.color}33; transition:all 0.3s;`;
             card.innerHTML = `
                 <div class="mercado-card-header">
-                    <img class="mercado-logo" src="${getEmpresaLogo(emp)}" data-empresa="${escaparHtmlSocial(emp || '')}" data-logo-fallback="${getEmpresaLogoFallback(emp)}" data-logo-favicon="${getEmpresaLogoFavicon(emp)}" data-empresa-logo="${emp}" alt="Logo de ${emp}" loading="lazy" onerror="manejarErrorLogoEmpresa(this)">
+                    <img class="mercado-logo" src="${getEmpresaLogo(emp)}" data-empresa-logo="${emp}" alt="Logo de ${emp}" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';">
                     <div class="mercado-company-name" style="color:${data.color};">${emp}</div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px;">
@@ -6730,52 +6048,58 @@ function renderMercadoCompleto() {
                 <div class="volat-tag" style="font-size:0.6em; color:#666; margin-top:3px;">vol: ${(meta.vol*100).toFixed(1)}%</div>
             `;
             grid.appendChild(card);
-            if (mercadoCardsObserver) mercadoCardsObserver.observe(card);
-            else mercadoCardsVisibles.add(card);
         });
 
         catDiv.appendChild(grid);
         cont.appendChild(catDiv);
-        requestAnimationFrame(renderizarSiguienteCategoria);
-    };
-    requestAnimationFrame(renderizarSiguienteCategoria);
+    });
 }
 
-// Actualizar solo los precios cercanos a la vista cuando la sección está activa.
+// Actualizar precios en el mercado sin re-renderizar todo
 setInterval(() => {
-    if (!usuarioActual || document.hidden) return;
-    const mercado = document.getElementById('mercado');
-    if (mercado && !mercado.classList.contains('hidden')) {
-        mercadoCardsVisibles.forEach(card => {
-            if (!card.isConnected) {
-                mercadoCardsVisibles.delete(card);
-                return;
-            }
-            const emp = card.id.slice('mercado-card-'.length);
-            const meta = empresaMeta[emp];
-            if (!meta) return;
-            const price = preciosMercado[emp];
-            const trend = meta.historial[meta.historial.length - 1] || 0;
-            const displayColor = trend >= 0 ? '#00e676' : '#ff5252';
+    if (!usuarioActual) return;
+    Object.entries(CATEGORIAS).forEach(([cat, data]) => {
+        data.empresas.forEach(e => {
+            let emp = e.n;
+            let card = document.getElementById(`mercado-card-${emp}`);
+            if (!card) return;
+            let meta = empresaMeta[emp];
+            let p = preciosMercado[emp];
+            let trend = meta.historial[meta.historial.length-1] || 0;
+            let arrow = trend >= 0 ? "▲" : "▼";
+            let trendPct = trend.toFixed(1);
+
+            // Colores de mercado ajustados - verde/rojo mas claros para mejor visibilidad
+            let marketGreen = "#00e676";
+            let marketRed = "#ff5252";
+            let displayColor = trend >= 0 ? marketGreen : marketRed;
+
             const priceTag = card.querySelector('.price-tag');
             const arrowEl = card.querySelector('.trend-arrow');
             const trendPctEl = card.querySelector('.trend-pct');
-            if (priceTag) priceTag.textContent = formatPrecioMercado(price);
+            const volTag = card.querySelector('.volat-tag');
+
+            if (priceTag) priceTag.innerText = formatPrecioMercado(p);
             if (arrowEl) {
-                arrowEl.textContent = trend >= 0 ? '▲' : '▼';
+                arrowEl.innerText = arrow;
                 arrowEl.style.color = displayColor;
             }
             if (trendPctEl) {
-                trendPctEl.textContent = `${trend.toFixed(1)}%`;
+                trendPctEl.innerText = `${trendPct}%`;
                 trendPctEl.style.color = displayColor;
             }
+            if (volTag) volTag.innerText = `vol: ${(meta.vol*100).toFixed(1)}%`;
         });
-    }
+    });
 
     if (document.getElementById("modalConfirm")?.classList.contains("active")) {
         refreshConfirmModal();
     }
-}, 1000);
+
+    // Si el mercado no ha sido renderizado aún, renderizarlo
+    let cont = document.getElementById("mercadoCategorias");
+    if (cont && cont.children.length === 0) renderMercadoCompleto();
+}, 800);
 
 // ==========================================
 // CONSEJOS / APRENDIZAJE
@@ -7351,7 +6675,6 @@ function renderWiki(filtro = 'todos') {
     articulos.forEach(art => {
         let div = document.createElement('div');
         div.className = 'wiki-card ' + art.cat;
-        div.dataset.wikiId = art.id;
 
         let relacionHTML = art.relacion.map(r => {
             let rel = WIKI_ARTICULOS.find(x => x.id === r);
@@ -7364,7 +6687,6 @@ function renderWiki(filtro = 'todos') {
                 <div class="wiki-titulo" style="color:${art.color}">${art.titulo}</div>
                 <div class="wiki-nivel ${art.nivel}">${art.nivel}</div>
             </div>
-            <button type="button" class="wiki-speak-button" data-wiki-id="${art.id}" aria-pressed="false" onclick="leerArticuloWiki('${art.id}')" aria-label="Escuchar artículo">🔊 Escuchar artículo</button>
             <div class="wiki-seccion"><b>🧠 Explicacion:</b> ${art.explicacion}</div>
             <div class="wiki-seccion"><b>📊 Ejemplo:</b> ${art.ejemplo}</div>
             <div class="wiki-seccion"><b>🎯 Cuando usarlo:</b> ${art.cuando.map(c => `<span style="display:inline-block;background:rgba(255,255,255,0.05);padding:3px 8px;border-radius:6px;margin:2px;font-size:0.75em;color:#ccc">${c}</span>`).join('')}</div>
@@ -7654,7 +6976,6 @@ function mostrar(id) {
     if (id === 'habilidades') renderHabilidades();
     if (id === 'reputacion') renderReputacion();
     if (id === 'desafios') renderDesafios();
-    if (id === 'vida-diaria') renderRetosHogar();
     if (id === 'logros') renderLogros();
     if (id === 'aprendizaje') renderWiki();
     if (id === 'mercado') renderMercadoCompleto();
@@ -7875,7 +7196,7 @@ async function renderSocial() {
                 ? `<button type="button" onclick="eliminarProyectoCooperativo('${encodeURIComponent(project.id)}')">Eliminar proyecto</button>`
                 : '';
         const amountLabel = project.status === 'Aceptado' && investment ? '' : ` · Aporte: ${formatD(project.amount || 0)}`;
-        return `<div class="social-list-item" data-cooperative-project-id="${escaparHtmlSocial(project.id)}"><span class="cooperative-project-summary"><span class="cooperative-company-logo"><img src="${getEmpresaLogo(project.company)}" data-empresa="${escaparHtmlSocial(project.company || '')}" data-logo-fallback="${getEmpresaLogoFallback(project.company)}" data-logo-favicon="${getEmpresaLogoFavicon(project.company)}" alt="Logo de ${escaparHtmlSocial(project.company || 'empresa')}" loading="lazy" decoding="async" onerror="manejarErrorLogoEmpresa(this)"></span><span><strong>${escaparHtmlSocial(project.name || `${obtenerPropietarioProyecto(project) || 'Jugador'} + ${project.partner || 'jugador'}`)}</strong><small>${escaparHtmlSocial(project.company || 'Sin empresa')} · ${escaparHtmlSocial(project.status || 'Pendiente')}${amountLabel} · <span class="cooperative-project-price cooperative-project-value">${valueLabel}</span> · <span class="cooperative-project-price cooperative-project-result ${resultClass}">${resultLabel}</span></small></span></span><span class="social-list-actions">${action}</span></div>`;
+        return `<div class="social-list-item" data-cooperative-project-id="${escaparHtmlSocial(project.id)}"><span class="cooperative-project-summary"><span class="cooperative-company-logo"><img src="${getEmpresaLogo(project.company)}" alt="Logo de ${escaparHtmlSocial(project.company || 'empresa')}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';"></span><span><strong>${escaparHtmlSocial(project.name || `${obtenerPropietarioProyecto(project) || 'Jugador'} + ${project.partner || 'jugador'}`)}</strong><small>${escaparHtmlSocial(project.company || 'Sin empresa')} · ${escaparHtmlSocial(project.status || 'Pendiente')}${amountLabel} · <span class="cooperative-project-price cooperative-project-value">${valueLabel}</span> · <span class="cooperative-project-price cooperative-project-result ${resultClass}">${resultLabel}</span></small></span></span><span class="social-list-actions">${action}</span></div>`;
     }).join('') : '<div class="social-empty">Todavía no hay proyectos cooperativos.</div>';
     renderFriendChat();
 }
@@ -8186,7 +7507,7 @@ function renderCooperativeCompanyOptions(query = '') {
     const normalizedQuery = String(query).trim().toLowerCase();
     const companies = [...new Set(TODAS_EMPRESAS)].filter(company => company.toLowerCase().includes(normalizedQuery));
     if (countLabel) countLabel.textContent = `${companies.length} empresa${companies.length === 1 ? '' : 's'} disponible${companies.length === 1 ? '' : 's'}`;
-    options.innerHTML = companies.length ? companies.map(company => `<button type="button" class="cooperative-company-option${selected.value === company ? ' selected' : ''}" data-company="${escaparHtmlSocial(company)}" onclick="seleccionarEmpresaCooperativa('${encodeURIComponent(company)}')"><span class="cooperative-company-logo"><img src="${getEmpresaLogo(company)}" data-empresa="${escaparHtmlSocial(company || '')}" data-logo-fallback="${getEmpresaLogoFallback(company)}" data-logo-favicon="${getEmpresaLogoFavicon(company)}" alt="Logo de ${escaparHtmlSocial(company)}" loading="lazy" onerror="manejarErrorLogoEmpresa(this)"></span><span class="cooperative-company-copy"><strong>${escaparHtmlSocial(company)}</strong><small>${formatD(preciosMercado[company] || 0)}</small></span></button>`).join('') : '<div class="social-empty">No se encontraron empresas.</div>';
+    options.innerHTML = companies.length ? companies.map(company => `<button type="button" class="cooperative-company-option${selected.value === company ? ' selected' : ''}" data-company="${escaparHtmlSocial(company)}" onclick="seleccionarEmpresaCooperativa('${encodeURIComponent(company)}')"><span class="cooperative-company-logo"><img src="${getEmpresaLogo(company)}" alt="Logo de ${escaparHtmlSocial(company)}" loading="lazy" onerror="this.onerror=null;this.src='assets/logos/logo-mark.png';"></span><span class="cooperative-company-copy"><strong>${escaparHtmlSocial(company)}</strong><small>${formatD(preciosMercado[company] || 0)}</small></span></button>`).join('') : '<div class="social-empty">No se encontraron empresas.</div>';
     if (selectedLabel) selectedLabel.textContent = selected.value ? `Empresa seleccionada: ${selected.value} · ${formatD(preciosMercado[selected.value] || 0)}` : 'Selecciona una empresa';
 }
 
@@ -8513,8 +7834,6 @@ function subirXP(p) {
         // ===== FIX: Dar 3 puntos de habilidad por nivel =====
         puntosHabilidadTotal += 3;
         toast("🚀 ¡SUBISTE DE NIVEL " + nivel + "! Nuevos sectores desbloqueados. +3 PH", "success");
-        hablarTextoApp(`¡Felicitaciones! Subiste al nivel ${nivel}. Desbloqueaste nuevos sectores y ganaste 3 puntos de habilidad. Sigue aprendiendo y construyendo tu imperio.`);
-        tiendaRenderPendiente = true;
         dibujarTienda();
         checkLogros();
         checkDesafio("subir_nivel", nivel);
@@ -10164,3 +9483,4 @@ function initQR() {
         img.dataset.ready = 'true';
     }
 }
+
