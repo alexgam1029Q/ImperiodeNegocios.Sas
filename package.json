@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "generate:welcome-audio": "node --env-file=.env.local scripts/generate-welcome-audio.mjs"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.74.0"
+  }
+}
