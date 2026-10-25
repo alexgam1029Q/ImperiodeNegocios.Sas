@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imperio-shell-v83';
+const CACHE_NAME = 'imperio-shell-v93';
 const APP_SHELL = [
     './',
     './index.html',
@@ -11,6 +11,7 @@ const APP_SHELL = [
     './json/manifest.webmanifest',
     './assets/logos/app-icon-192.png',
     './assets/logos/app-icon-512.png',
+    './assets/audio/bienvenida-imperio.mp3',
 ];
 
 self.addEventListener('install', event => {

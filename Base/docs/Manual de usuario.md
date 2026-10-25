@@ -197,3 +197,13 @@ La aplicación puede instalarse desde el botón **Instalar app** cuando el naveg
 ## 23. Soporte y datos
 
 El progreso de la cuenta se guarda en la plataforma. Para utilizar correctamente la aplicación, se recomienda acceder mediante un navegador actualizado y mantener una conexión a Internet activa.
+
+## 24. Retos de la vida diaria
+
+En **Vida diaria** puedes explorar escenarios de presupuesto, consumo, ahorro, crédito e inversión. Usa los filtros para elegir un tema, selecciona una opción y revisa la idea clave y la explicación de cada decisión. No hay penalización por equivocarse: el objetivo es aprender a comparar alternativas y adaptar las ideas a tu situación.
+
+Cada tarjeta incluye un botón para escuchar en voz alta el escenario, sus opciones y la idea clave. La lectura usa las voces en español que ofrece el navegador. Al completar una actividad recibes dinero y experiencia para el simulador principal. Cada reto se puede recompensar una vez al día y el progreso se renueva diariamente.
+
+En **Aprender** (Wiki de Inversión), cada tarjeta tiene el botón **Escuchar artículo**, que lee su explicación, ejemplo, consejos y demás contenido usando la voz en español disponible en el navegador. Mientras se reproduce, puedes pausar y reanudar la lectura con el mismo botón.
+
+Durante la configuración inicial, las guías de voz explican cómo elegir el nombre de usuario, la moneda y el plan; puedes pausarlas y reanudarlas con el mismo botón. La selección del plan aparece antes de entrar al Panel General. Al seleccionar una moneda o un plan también se escucha un resumen. Al subir de nivel, una voz anuncia el nuevo nivel y las recompensas.

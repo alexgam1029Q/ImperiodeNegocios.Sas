@@ -447,6 +447,7 @@ const SECTION_CONFIG = [
     { id: 'mercado', label: '📈 Mercado' },
     { id: 'noticias', label: '📰 Noticias' },
     { id: 'aprendizaje', label: '🧠 Aprender' },
+    { id: 'vida-diaria', label: '🎮 Vida diaria' },
     { id: 'bancos', label: '🏦 Bancos' },
     { id: 'logros', label: '🏆 Logros' },
     { id: 'asesores', label: '🎩 Asesores' },
