@@ -30,19 +30,6 @@ http://127.0.0.1:8000/
 
 La página raíz redirige automáticamente a la pantalla de acceso principal de la app.
 
-## Audio de bienvenida
-
-La bienvenida se muestra después de iniciar sesión. Su voz se sirve como un archivo de audio estático para que el navegador no necesite una clave de ElevenLabs.
-
-Para volver a generar la voz, configura ElevenLabs con `npx -y @elevenlabs/cli@latest onboard init` y ejecuta:
-
-```powershell
-npm install
-npm run generate:welcome-audio
-```
-
-La clave se guarda localmente en `.env.local`, que está excluido del control de versiones. El audio generado queda en `Base/assets/audio/bienvenida-imperio.mp3`.
-
 ## Estructura del repositorio
 
 ```text
